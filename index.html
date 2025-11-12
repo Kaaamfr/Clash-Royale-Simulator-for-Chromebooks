@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>kaaam's Clash Sim</title> <style>
+        body { 
+            font-family: sans-serif; 
+            text-align: center; 
+            background: #f0f0f4; 
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Hide scrollbars */
+        }
+
+        /* --- Modal Styles --- */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .modal-content {
+            background: #333;
+            color: white;
+            padding: 20px 40px;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #8A2BE2;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-content h1 {
+            font-size: 1.5em;
+            color: #ccc;
+            margin: 0;
+        }
+        .modal-content h2 {
+            font-size: 2.5em;
+            color: #f1c40f;
+            margin-top: 5px;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px #000;
+        }
+        .modal-button {
+            padding: 15px 30px;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #8A2BE2;
+            color: white;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+        .modal-button:hover {
+            transform: scale(1.05);
+            background-color: #9b4be0;
+        }
+        .modal-button:disabled {
+            background-color: #555;
+            color: #999;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* --- Deck Builder Styles --- */
+        #deck-builder-modal {
+            display: none; /* Hidden by default */
+        }
+        #card-collection {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr); /* 5 cards per row */
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .deck-builder-card {
+            width: 80px;
+            height: 100px;
+            background-color: #ccc;
+            border: 2px solid #333;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+            transition: all 0.2s;
+        }
+        .deck-builder-card.selected {
+            border: 3px solid #f1c40f;
+            transform: scale(1.05);
+            background-color: #ddd;
+        }
+        .card-icon { font-size: 36px; }
+        .card-name { font-size: 11px; text-align: center; color: #000; }
+        .card-cost {
+            position: absolute;
+            top: -5px;
+            left: -5px;
+            background: #8A2BE2; /* Purple */
+            color: white;
+            font-weight: bold;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            line-height: 20px;
+            font-size: 12px;
+        }
+        
+        /* --- NEW: Stat Display Styles --- */
+        #stat-display {
+            width: 250px;
+            height: 450px; /* Fixed height */
+            background: #222;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #f1c40f; /* Gold border to stand out */
+            margin-left: 20px;
+            text-align: left;
+            font-size: 14px;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+        #stat-display h2 {
+            text-align: center;
+            color: #f1c40f;
+            margin: 0 0 15px 0;
+        }
+        #stat-display p {
+            margin: 8px 0;
+        }
+        #stat-display .stat-name {
+            font-weight: bold;
+            color: #aaa;
+            margin-right: 5px;
+        }
+        /* --------------------------- */
+        
+        /* --- Difficulty Modal Styles --- */
+        #difficulty-modal {
+            display: none; /* Hidden by default */
+        }
+        #difficulty-select {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* --- Game Styles --- */
+        .game-container { 
+            display: none; /* Hidden by default */
+            border: 2px solid #333; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
+            margin-top: 10px; 
+            width: 600px; 
+            position: relative; 
+        }
+        canvas { 
+            background-color: #8c8; 
+            border-bottom: 5px solid #000;
+            cursor: pointer; 
+        } 
+        
+        .ui-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 10px;
+            background-color: #333;
+            color: white;
+        }
+        .player-info, .enemy-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1; 
+        }
+        .enemy-info { justify-content: flex-end; }
+        .crown-display {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #f1c40f; 
+            text-shadow: 1px 1px #000;
+        }
+        .timer-display {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px #000;
+            flex: 0 0 100px;
+            text-align: center;
+        }
+        
+        .hand-container {
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            align-items: center; /* This centers the children (elixir bar) */
+            padding: 10px;
+            background-color: #eee;
+            width: 600px; 
+            box-sizing: border-box;
+        }
+
+        /* ELIXIR BAR STYLES */
+        .elixir-bar {
+            width: 250px; 
+            height: 20px;
+            background-color: #555;
+            border: 2px solid #8A2BE2; 
+            position: relative;
+            margin-bottom: 10px; 
+            display: inline-block; /* Center elixir bar */
+        }
+        #elixir-level {
+            height: 100%;
+            width: 0%;
+            background-color: #8A2BE2; 
+            transition: width 0.1s linear;
+        }
+        #elixir-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            line-height: 20px;
+            font-weight: bold;
+            color: black;
+            text-shadow: 1px 1px 0 #fff;
+        }
+
+        /* Hand Slot Styles */
+        .hand { 
+            display: flex;
+            justify-content: center;
+            gap: 10px; 
+            width: 100%;
+        }
+        .card-slot {
+            width: 80px;
+            height: 100px;
+            background-color: #ccc;
+            border: 2px solid #333;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+            user-select: none; 
+            box-sizing: border-box;
+        }
+        .card-slot.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #999;
+        }
+        .card-slot.selected {
+            border: 3px solid #ff00ff;
+            transform: scale(1.05);
+        }
+        .card-icon { font-size: 36px; }
+        .card-name { font-size: 11px; }
+        .card-cost {
+            position: absolute;
+            top: -5px;
+            left: -5px;
+            background: #8A2BE2;
+            color: white;
+            font-weight: bold;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            line-height: 20px;
+            font-size: 12px;
+        }
+
+        /* --- Hover Symbol --- */
+        #hover-symbol {
+            position: absolute;
+            display: none;
+            font-size: 36px;
+            pointer-events: none; /* Click "through" the icon */
+            z-index: 200;
+            opacity: 0.8;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="intro-modal" class="modal">
+        <div class="modal-content">
+            <h1>kaaam Presents...</h1>
+            <h2>CLASH ROYALE SIMULATOR!</h2>
+            <button id="start-build-button" class="modal-button">Build Your Deck</button>
+        </div>
+    </div>
+    
+    <div id="deck-builder-modal" class="modal">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 10px;">Build Your Deck</h2>
+            <h3 id="deck-counter" style="margin-top: 0; color: #f1c40f;">Select 8 Cards (0 / 8)</h3>
+            <h3 id="average-cost-display" style="margin-top: -10px; margin-bottom: 20px; color: #aaa; font-size: 1em;">Average Cost: 0.0</h3>
+            
+            <div id="card-collection">
+                </div>
+            <button id="confirm-deck-button" class="modal-button" disabled>Confirm Deck</button>
+            <button id="randomize-deck-button" class="modal-button" style="margin-top: 10px; background-color: #007bff;">Randomize Deck</button>
+        </div>
+        
+        <div id="stat-display">
+            <h2>Card Stats</h2>
+            <p>Hover over a card to see its stats.</p>
+        </div>
+    </div>
+    
+    <div id="difficulty-modal" class="modal">
+        <div class="modal-content">
+            <h2>Choose Your Difficulty</h2>
+            <div id="difficulty-select">
+                <button class="modal-button" data-rate="13000" data-spawn-count="1">Easy (1 Unit / 13s)</button>
+                <button class="modal-button" data-rate="9000" data-spawn-count="1">Medium (1 Unit / 9s)</button>
+                <button class="modal-button" data-rate="6500" data-spawn-count="1">Hard (1 Unit / 6.5s)</button>
+                <button class="modal-button" data-rate="10000" data-spawn-count="2">Extreme (2 Units / 10s)</button>
+                <button class="modal-button" data-rate="6500" data-spawn-count="2">Impossible (2 Units / 6.5s)</button>
+            </div>
+        </div>
+    </div>
+    <div class="game-container" id="game-container">
+        <p style="text-align: center; margin: 5px 0; font-weight: bold;">
+            Deploy Troops & Buildings on your side. Deploy Spells anywhere!
+        </p>
+
+        <div class="ui-panel">
+            <div class="player-info">
+                <span class="crown-display" id="player-crowns">👑 0</span>
+                <span style="font-size: 1.2em; font-weight: bold;">PLAYER</span>
+            </div>
+            <div class="timer-display" id="timer-display">3:00</div>
+            <div class="enemy-info">
+                <span style="font-size: 1.2em; font-weight: bold;">ENEMY</span>
+                <span class="crown-display" id="enemy-crowns">👑 0</span>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas" width="600" height="300"></canvas> 
+        
+        <button id="replay-button" class="modal-button" style="display: none; position: absolute; top: 60%; left: 50%; transform: translate(-50%, -50%); z-index: 50;">Play Again</button>
+        </div>
+    
+    <div class="hand-container" id="hand-container">
+        <div class="elixir-bar">
+            <div id="elixir-level"></div>
+            <div id="elixir-text">0 / 10</div>
+        </div>
+        <div class="hand" id="card-hand">
+            <div class="card-slot" id="slot-0"></div>
+            <div class="card-slot" id="slot-1"></div>
+            <div class="card-slot" id="slot-2"></div> 
+            <div class="card-slot" id="slot-3"></div>
+        </div>
+    </div>
+
+    <div id="hover-symbol"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
