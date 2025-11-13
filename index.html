@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>kaaam's Clash Sim</title> <style>
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <title>kaaam's Clash Sim</title>
+    <style>
         body { 
             font-family: sans-serif; 
             text-align: center; 
@@ -75,7 +76,22 @@
         /* --- Deck Builder Styles --- */
         #deck-builder-modal {
             display: none; /* Hidden by default */
+            flex-direction: row; 
+            align-items: flex-start;
         }
+        
+        /* --- NEW: Left Panel (Collection) --- */
+        .deck-builder-collection {
+            background: #333;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #8A2BE2;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
         #card-collection {
             display: grid;
             grid-template-columns: repeat(5, 1fr); /* 5 cards per row */
@@ -100,11 +116,8 @@
             user-select: none;
             transition: all 0.2s;
         }
-        .deck-builder-card.selected {
-            border: 3px solid #f1c40f;
-            transform: scale(1.05);
-            background-color: #ddd;
-        }
+        /* --- REMOVED .selected CLASS --- */
+        
         .card-icon { font-size: 36px; }
         .card-name { font-size: 11px; text-align: center; color: #000; }
         .card-cost {
@@ -121,20 +134,27 @@
             font-size: 12px;
         }
         
-        /* --- NEW: Stat Display Styles --- */
+        /* --- NEW: Right Panel (Deck + Stats) --- */
+        .deck-builder-sidebar {
+            width: 300px;
+            margin-left: 20px;
+            flex-shrink: 0;
+        }
+
+        /* --- Stat Display Styles --- */
         #stat-display {
-            width: 250px;
-            height: 450px; /* Fixed height */
+            width: 100%;
+            height: 320px; /* NEW: Changed height */
             background: #222;
             color: white;
             padding: 20px;
             border-radius: 10px;
-            border: 2px solid #f1c40f; /* Gold border to stand out */
-            margin-left: 20px;
+            border: 2px solid #f1c40f; 
             text-align: left;
             font-size: 14px;
             overflow-y: auto;
             box-sizing: border-box;
+            margin-bottom: 20px; /* NEW: Added margin */
         }
         #stat-display h2 {
             text-align: center;
@@ -148,6 +168,67 @@
             font-weight: bold;
             color: #aaa;
             margin-right: 5px;
+        }
+        /* --------------------------- */
+        
+        /* --- NEW: Saved Deck Slots --- */
+        #saved-deck-container {
+            text-align: center;
+        }
+        
+        #saved-deck-slots {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            background: #333;
+            padding: 10px;
+            border-radius: 10px;
+            border: 2px solid #8A2BE2;
+            margin-bottom: 20px;
+        }
+        
+        .deck-card-slot {
+            width: 60px;
+            height: 80px;
+            background-color: #555;
+            border: 2px dashed #888;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 5px;
+            font-weight: bold;
+            position: relative;
+            user-select: none; 
+            box-sizing: border-box;
+        }
+        
+        .deck-card-slot.filled {
+            background-color: #ccc;
+            border: 2px solid #333;
+            cursor: pointer;
+        }
+
+        /* --------------------------- */
+
+        /* --- Responsive fix for small screens --- */
+        @media (max-width: 900px) { /* Widened the trigger point */
+            #deck-builder-modal {
+                flex-direction: column; /* Stack items vertically */
+                overflow-y: auto; /* Allow the whole modal to scroll if needed */
+                align-items: center;
+            }
+            
+            .deck-builder-sidebar {
+                margin-left: 0;
+                margin-top: 20px;
+                width: 90%;
+            }
+
+            .deck-builder-collection {
+                width: 90%;
+            }
         }
         /* --------------------------- */
         
@@ -275,7 +356,7 @@
             background-color: #999;
         }
         .card-slot.selected {
-            border: 3px solid #ff00ff;
+            border: 3px solid #f1c40f;
             transform: scale(1.05);
         }
         .card-icon { font-size: 36px; }
@@ -316,32 +397,42 @@
     </div>
     
     <div id="deck-builder-modal" class="modal">
-        <div class="modal-content">
+        <div class="deck-builder-collection">
             <h2 style="margin-bottom: 10px;">Build Your Deck</h2>
-            <h3 id="deck-counter" style="margin-top: 0; color: #f1c40f;">Select 8 Cards (0 / 8)</h3>
-            <h3 id="average-cost-display" style="margin-top: -10px; margin-bottom: 20px; color: #aaa; font-size: 1em;">Average Cost: 0.0</h3>
+            <h3 id="coin-counter" style="margin-top: 0; color: #f1c40f;">Coins: 0</h3>
+            <p>Click a card to see stats/upgrade. Drag a card to the right to add it to your deck.</p>
             
             <div id="card-collection">
                 </div>
-            <button id="confirm-deck-button" class="modal-button" disabled>Confirm Deck</button>
-            <button id="randomize-deck-button" class="modal-button" style="margin-top: 10px; background-color: #007bff;">Randomize Deck</button>
         </div>
         
-        <div id="stat-display">
-            <h2>Card Stats</h2>
-            <p>Hover over a card to see its stats.</p>
+        <div class="deck-builder-sidebar">
+            <div id="stat-display">
+                <h2>Card Stats</h2>
+                <p>Click a card to see its stats.</p>
+            </div>
+            
+            <div id="saved-deck-container">
+                <h3 id="deck-counter" style="margin-top: 0; color: #aaa;">Your Deck (0 / 8)</h3>
+                <h3 id="average-cost-display" style="margin-top: -10px; margin-bottom: 10px; color: #aaa; font-size: 1em;">Average Cost: 0.0</h3>
+                <div id="saved-deck-slots">
+                    </div>
+                <button id="confirm-deck-button" class="modal-button" disabled>Confirm Deck</button>
+                <button id="randomize-deck-button" class="modal-button" style="margin-top: 10px; background-color: #007bff;">Randomize Deck</button>
+            </div>
         </div>
     </div>
     
     <div id="difficulty-modal" class="modal">
         <div class="modal-content">
             <h2>Choose Your Difficulty</h2>
+            <p style="margin-top: -10px; margin-bottom: 20px; color: #aaa;">Difficulty increases the AI's spawn rate and your coin reward.</p>
             <div id="difficulty-select">
-                <button class="modal-button" data-rate="13000" data-spawn-count="1">Easy (1 Unit / 13s)</button>
-                <button class="modal-button" data-rate="9000" data-spawn-count="1">Medium (1 Unit / 9s)</button>
-                <button class="modal-button" data-rate="6500" data-spawn-count="1">Hard (1 Unit / 6.5s)</button>
-                <button class="modal-button" data-rate="10000" data-spawn-count="2">Extreme (2 Units / 10s)</button>
-                <button class="modal-button" data-rate="6500" data-spawn-count="2">Impossible (2 Units / 6.5s)</button>
+                <button class="modal-button" data-rate="13000" data-spawn-count="1" data-multiplier="1.0">Easy (1x Coins)</button>
+                <button class="modal-button" data-rate="9000" data-spawn-count="1" data-multiplier="1.5">Medium (1.5x Coins)</button>
+                <button class="modal-button" data-rate="6500" data-spawn-count="1" data-multiplier="2.0">Hard (2x Coins)</button>
+                <button class="modal-button" data-rate="10000" data-spawn-count="2" data-multiplier="3.0">Extreme (3x Coins)</button>
+                <button class="modal-button" data-rate="6500" data-spawn-count="2" data-multiplier="5.0">Impossible (5x Coins)</button>
             </div>
         </div>
     </div>

@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const TILE_SIZE = 20; // 20x20 pixel tiles
     const DEBUG_DRAW_GRID = false; // Set to true to see the grid!
     
-    // --- NEW: Pathfinding Waypoints ---
+    // --- Pathfinding Waypoints ---
     const bridgeTop = { x: 300, y: 85 };
     const bridgeBottom = { x: 300, y: 235 };
 
@@ -40,19 +40,27 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- Replay Button ---
     const replayButton = document.getElementById('replay-button');
     
+    // --- Coin Counter ---
+    const coinCounterDisplay = document.getElementById('coin-counter');
+    
     // Difficulty Settings
     let enemySpawnRate = 6500; 
     let enemySpawnCount = 1; 
     let enemySpawnInterval = null; 
+    let enemyLevel = 1; // NEW: Enemy level
+    let coinMultiplier = 1.0; // NEW: Coin reward multiplier
+    
+    // --- NEW: Saved Deck Slots ---
+    const savedDeckSlotsContainer = document.getElementById('saved-deck-slots');
 
     // Game Arrays
     const units = []; 
-    const buildings = []; // For Goblin Hut
-    const projectiles = []; // For arrows, etc.
-    const spellProjectiles = []; // For Fireball, Rocket
-    const spellEffects = []; // For AOE visuals
-    const spellAreas = []; // For Earthquake
-    const deathBombs = []; // For Giant Skeleton
+    const buildings = []; 
+    const projectiles = []; 
+    const spellProjectiles = []; 
+    const spellEffects = []; 
+    const spellAreas = []; 
+    const deathBombs = []; 
     
     let playerElixir = 5;
     const maxElixir = 10;
@@ -76,9 +84,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let enemyCrowns = 0;
 
     // Deck and Hand Management
-    let playerDeck = []; // The 8 cards the player chooses
-    let enemyDeck = []; // The AI's 8-card deck
-    let fullDeck = []; // The 8 cards used in the match
+    let playerDeck = []; // The 8 cards the player *takes into battle*
+    let enemyDeck = []; 
+    let fullDeck = []; 
     let drawPile = [];
     let hand = [null, null, null, null]; // 4 slots
     let discardPile = [];
@@ -101,63 +109,165 @@ document.addEventListener("DOMContentLoaded", () => {
     let mouseCanvasX = -100;
     let mouseCanvasY = -100;
 
-    // --- Master Card List (Level 11 Stats) ---
-    // Speeds: Slow (0.6), Medium (1.0), Fast (1.4), Very Fast (1.8)
+    // --- NEW: Leveling System ---
+    
+    // The "save file" for the player
+    let playerProgress = {
+        coins: 0,
+        kingTowerLevel: 1,
+        cardLevels: {}, // e.g., {'knight': 1, 'pekka': 1}
+        savedDeck: [null, null, null, null, null, null, null, null] // --- NEW: 8-slot saved deck
+    };
+    
+    // The "database" of level-up costs
+    const LEVEL_UP_COSTS = {
+        // level -> cost to upgrade to next level
+        1: 5, 2: 20, 3: 50, 4: 150, 5: 400, 6: 1000, 7: 2000,
+        8: 4000, 9: 8000, 10: 15000, 11: 25000, 12: 50000, 13: 100000, 14: 0 
+    };
+    
+    // --- NEW: Base coin reward, multiplier is applied ---
+    const BASE_COIN_REWARD = 50;
+
+    // --- MASTER CARD LIST (ALL LEVEL 1 STATS) ---
+    // --- RANGES AND SPEEDS HALVED/REDUCED ---
     const MASTER_CARD_LIST = {
         // --- TROOPS ---
-        knight: { type: 'troop', name: 'Knight', icon: '🤺', size: 28, hp: 1596, dmg: 186, speed: 1.0, range: 10, attackSpeed: 1.2, cost: 3, canTargetAir: false, isFlying: false, displayName: 'Knight', deployTime: 60 },
-        archer: { type: 'troop', name: 'Archer', icon: '🏹', size: 22, hp: 279, dmg: 96, speed: 1.0, range: 150, attackSpeed: 1.2, cost: 3, isRanged: true, projectileColor: 'lightgreen', canTargetAir: true, isFlying: false, displayName: 'Archers (x2)', deployTime: 60 },
-        giant: { type: 'troop', name: 'Giant', icon: '🏋️', size: 35, hp: 3619, dmg: 231, speed: 0.6, range: 10, attackSpeed: 1.5, cost: 5, canTargetAir: false, isFlying: false, displayName: 'Giant', deployTime: 60, targets: 'buildings' },
-        mini_pekka: { type: 'troop', name: 'Mini P.E.K.K.A', icon: '🤖', size: 25, hp: 1056, dmg: 572, speed: 1.4, range: 10, attackSpeed: 1.8, cost: 4, canTargetAir: false, isFlying: false, displayName: 'Mini P.E.K.K.A', deployTime: 60 },
-        baby_dragon: { type: 'troop', name: 'Baby Dragon', icon: '🐉', size: 35, hp: 1024, dmg: 146, speed: 1.4, range: 120, attackSpeed: 1.5, cost: 4, isRanged: true, projectileColor: 'orange', canTargetAir: true, isFlying: true, displayName: 'Baby Dragon', deployTime: 60 },
-        skeleton: { type: 'troop', name: 'Skeleton', icon: '💀', size: 18, hp: 79, dmg: 79, speed: 1.4, range: 10, attackSpeed: 1.0, cost: 1, canTargetAir: false, isFlying: false, displayName: 'Skeletons (x3)', deployTime: 60 },
-        witch: { type: 'troop', name: 'Witch', icon: '🧙', size: 28, hp: 768, dmg: 122, speed: 1.0, range: 130, attackSpeed: 1.1, cost: 5, isRanged: true, projectileColor: 'purple', canTargetAir: true, isFlying: false, lastSpawnTime: 0, spawnRate: 420, displayName: 'Witch', deployTime: 60 }, // 7s spawn
-        barbarians: { type: 'troop', name: 'Barbarians', icon: '⚔️', size: 26, hp: 387, dmg: 120, speed: 1.0, range: 10, attackSpeed: 1.4, cost: 5, canTargetAir: false, isFlying: false, displayName: 'Barbarians (x5)', deployTime: 60 },
-        golem: { type: 'troop', name: 'Golem', icon: '🪨', size: 40, hp: 4679, dmg: 284, speed: 0.6, range: 10, attackSpeed: 2.5, cost: 8, canTargetAir: false, isFlying: false, displayName: 'Golem', deployTime: 60, deathSpawn: 'golemite', targets: 'buildings' },
-        ice_spirit: { type: 'troop', name: 'Ice Spirit', icon: '❄️', size: 20, hp: 210, dmg: 95, speed: 1.8, range: 10, attackSpeed: 0.5, cost: 1, freezeFrames: 78, canTargetAir: true, isFlying: false, displayName: 'Ice Spirit', deployTime: 60 },
-        spear_goblins: { type: 'troop', name: 'Spear Goblins', icon: '👺', size: 20, hp: 133, dmg: 80, speed: 1.8, range: 150, attackSpeed: 1.1, cost: 2, isRanged: true, projectileColor: 'brown', canTargetAir: true, isFlying: false, displayName: 'Spear Goblins (x3)', deployTime: 60 },
-        ice_wizard: { type: 'troop', name: 'Ice Wizard', icon: '🥶', size: 28, hp: 704, dmg: 111, speed: 1.0, range: 165, attackSpeed: 1.7, cost: 3, isRanged: true, projectileColor: 'cyan', canTargetAir: true, isFlying: false, displayName: 'Ice Wizard', deployTime: 60, slowFrames: 150 }, // 2.5s slow
-        zappies: { type: 'troop', name: 'Zappies', icon: '🔋', size: 22, hp: 318, dmg: 86, speed: 1.0, range: 135, attackSpeed: 1.6, cost: 4, isRanged: true, projectileColor: 'yellow', canTargetAir: true, isFlying: false, displayName: 'Zappies (x3)', deployTime: 60, stunFrames: 30 }, // 0.5s stun
-        giant_skeleton: { type: 'troop', name: 'Giant Skeleton', icon: '☠️', size: 38, hp: 2904, dmg: 186, speed: 1.0, range: 10, attackSpeed: 1.5, cost: 6, canTargetAir: false, isFlying: false, displayName: 'Giant Skeleton', deployTime: 60, deathBombStats: { damage: 1060, aoeRadius: 100, timer: 180 } }, // 3s bomb timer
+        knight: { type: 'troop', name: 'Knight', icon: '🤺', size: 28, hp: 660, dmg: 78, speed: 0.5, range: 10, attackSpeed: 1.2, cost: 3, canTargetAir: false, isFlying: false, displayName: 'Knight', deployTime: 60 },
+        archer: { type: 'troop', name: 'Archer', icon: '🏹', size: 22, hp: 116, dmg: 40, speed: 0.5, range: 90, attackSpeed: 1.2, cost: 3, isRanged: true, projectileType: 'arrow', canTargetAir: true, isFlying: false, displayName: 'Archers (x2)', deployTime: 60 },
+        giant: { type: 'troop', name: 'Giant', icon: '🏋️', size: 35, hp: 1500, dmg: 96, speed: 0.3, range: 10, attackSpeed: 1.5, cost: 5, canTargetAir: false, isFlying: false, displayName: 'Giant', deployTime: 60, targets: 'buildings' },
+        mini_pekka: { type: 'troop', name: 'Mini P.E.K.K.A', icon: '🤖', size: 25, hp: 440, dmg: 238, speed: 0.7, range: 10, attackSpeed: 1.8, cost: 4, canTargetAir: false, isFlying: false, displayName: 'Mini P.E.K.K.A', deployTime: 60 },
+        baby_dragon: { type: 'troop', name: 'Baby Dragon', icon: '🐉', size: 35, hp: 425, dmg: 60, speed: 0.7, range: 72, attackSpeed: 1.5, cost: 4, isRanged: true, projectileType: 'fireball', isSplash: true, splashRadius: 30, canTargetAir: true, isFlying: true, displayName: 'Baby Dragon', deployTime: 60 },
+        skeleton: { type: 'troop', name: 'Skeleton', icon: '💀', size: 18, hp: 33, dmg: 33, speed: 0.7, range: 10, attackSpeed: 1.0, cost: 1, canTargetAir: false, isFlying: false, displayName: 'Skeletons (x3)', deployTime: 60 },
+        witch: { type: 'troop', name: 'Witch', icon: '🧙', size: 28, hp: 320, dmg: 51, speed: 0.5, range: 78, attackSpeed: 1.1, cost: 5, isRanged: true, projectileType: 'magic', isSplash: true, splashRadius: 20, canTargetAir: true, isFlying: false, lastSpawnTime: 0, spawnRate: 420, displayName: 'Witch', deployTime: 60 }, // 7s spawn
+        barbarians: { type: 'troop', name: 'Barbarians', icon: '⚔️', size: 26, hp: 161, dmg: 50, speed: 0.5, range: 10, attackSpeed: 1.4, cost: 5, canTargetAir: false, isFlying: false, displayName: 'Barbarians (x5)', deployTime: 60 },
+        golem: { type: 'troop', name: 'Golem', icon: '🪨', size: 40, hp: 1943, dmg: 118, speed: 0.3, range: 10, attackSpeed: 2.5, cost: 8, canTargetAir: false, isFlying: false, displayName: 'Golem', deployTime: 60, deathSpawn: 'golemite', targets: 'buildings' },
+        ice_spirit: { type: 'troop', name: 'Ice Spirit', icon: '❄️', size: 20, hp: 87, dmg: 39, speed: 0.9, range: 10, attackSpeed: 0.5, cost: 1, freezeFrames: 78, canTargetAir: true, isFlying: false, displayName: 'Ice Spirit', deployTime: 60 },
+        spear_goblins: { type: 'troop', name: 'Spear Goblins', icon: '👺', size: 20, hp: 55, dmg: 33, speed: 0.9, range: 90, attackSpeed: 1.1, cost: 2, isRanged: true, projectileType: 'arrow', canTargetAir: true, isFlying: false, displayName: 'Spear Goblins (x3)', deployTime: 60 },
+        ice_wizard: { type: 'troop', name: 'Ice Wizard', icon: '🥶', size: 28, hp: 292, dmg: 46, speed: 0.5, range: 99, attackSpeed: 1.7, cost: 3, isRanged: true, projectileType: 'ice', isSplash: true, splashRadius: 25, canTargetAir: true, isFlying: false, displayName: 'Ice Wizard', deployTime: 60, slowFrames: 150 }, // 2.5s slow
+        zappies: { type: 'troop', name: 'Zappies', icon: '🔋', size: 22, hp: 132, dmg: 35, speed: 0.5, range: 81, attackSpeed: 1.6, cost: 4, isRanged: true, projectileType: 'zap', canTargetAir: true, isFlying: false, displayName: 'Zappies (x3)', deployTime: 60, stunFrames: 30 }, // 0.5s stun
+        giant_skeleton: { type: 'troop', name: 'Giant Skeleton', icon: '☠️', size: 38, hp: 1205, dmg: 77, speed: 0.5, range: 10, attackSpeed: 1.5, cost: 6, canTargetAir: false, isFlying: false, displayName: 'Giant Skeleton', deployTime: 60, deathBombStats: { damage: 440, aoeRadius: 100, timer: 180 } }, // 3s bomb timer
+        bats: { type: 'troop', name: 'Bats', icon: '🦇', size: 18, hp: 33, dmg: 33, speed: 0.7, range: 10, attackSpeed: 1.0, cost: 2, canTargetAir: true, isFlying: true, displayName: 'Bats (x5)', deployTime: 60 },
+        goblins: { type: 'troop', name: 'Goblins', icon: '🟢', size: 20, hp: 79, dmg: 49, speed: 0.9, range: 10, attackSpeed: 1.1, cost: 2, canTargetAir: false, isFlying: false, displayName: 'Goblins (x3)', deployTime: 60 },
+        minions: { type: 'troop', name: 'Minions', icon: '👿', size: 24, hp: 89, dmg: 41, speed: 0.7, range: 10, attackSpeed: 1.0, cost: 3, canTargetAir: true, isFlying: true, displayName: 'Minions (x3)', deployTime: 60 },
+        minion_horde: { type: 'troop', name: 'Minion Horde', icon: '👿👿', size: 24, hp: 89, dmg: 41, speed: 0.7, range: 10, attackSpeed: 1.0, cost: 5, canTargetAir: true, isFlying: true, displayName: 'Minion Horde (x6)', deployTime: 60, spawnUnit: 'minion_unit' },
+        royal_giant: { type: 'troop', name: 'Royal Giant', icon: '👑🏋️', size: 35, hp: 1160, dmg: 113, speed: 0.3, range: 117, attackSpeed: 1.7, cost: 6, isRanged: true, projectileType: 'cannonball', canTargetAir: false, isFlying: false, displayName: 'Royal Giant', deployTime: 60, targets: 'buildings' },
+        elite_barbarians: { type: 'troop', name: 'Elite Barbarians', icon: '💨⚔️', size: 28, hp: 462, dmg: 138, speed: 0.9, range: 10, attackSpeed: 1.7, cost: 6, canTargetAir: false, isFlying: false, displayName: 'E-Barbs (x2)', deployTime: 60 },
+        valkyrie: { type: 'troop', name: 'Valkyrie', icon: '👩‍🦰', size: 28, hp: 737, dmg: 110, speed: 0.5, range: 10, attackSpeed: 1.5, cost: 4, canTargetAir: false, isFlying: false, displayName: 'Valkyrie', deployTime: 60, isSplash: true },
+        pekka: { type: 'troop', name: 'P.E.K.K.A', icon: '🦾', size: 40, hp: 1424, dmg: 310, speed: 0.3, range: 10, attackSpeed: 1.8, cost: 7, canTargetAir: false, isFlying: false, displayName: 'P.E.K.K.A', deployTime: 60 },
+        bowler: { type: 'troop', name: 'Bowler', icon: '🟣', size: 35, hp: 717, dmg: 108, speed: 0.3, range: 81, attackSpeed: 2.5, cost: 5, isRanged: true, projectileType: 'boulder', canTargetAir: false, isFlying: false, displayName: 'Bowler', deployTime: 60 },
+        magic_archer: { type: 'troop', name: 'Magic Archer', icon: '🪄', size: 26, hp: 221, dmg: 46, speed: 0.5, range: 117, attackSpeed: 1.1, cost: 4, isRanged: true, projectileType: 'piercing_arrow', canTargetAir: true, isFlying: false, displayName: 'Magic Archer', deployTime: 60 },
+        miner: { type: 'troop', name: 'Miner', icon: '👷', size: 28, hp: 456, dmg: 58, towerDamage: 20, speed: 0.9, range: 10, attackSpeed: 1.2, cost: 3, canTargetAir: false, isFlying: false, displayName: 'Miner', deployTime: 60, deployAnywhere: true, targets: 'buildings' },
+        cannon_cart: { type: 'troop', name: 'Cannon Cart', icon: '🛒', size: 30, hp: 315, shieldHp: 315, dmg: 123, speed: 0.5, range: 99, attackSpeed: 1.2, cost: 5, isRanged: true, projectileType: 'cannonball', canTargetAir: false, isFlying: false, displayName: 'Cannon Cart', deployTime: 60, transformOnShieldBreak: 'cannon_cart_building' },
+        musketeer: { type: 'troop', name: 'Musketeer', icon: '👩‍🚀', size: 28, hp: 292, dmg: 90, speed: 0.5, range: 108, attackSpeed: 1.1, cost: 4, isRanged: true, projectileType: 'bullet', canTargetAir: true, isFlying: false, displayName: 'Musketeer', deployTime: 60 },
+        wizard: { type: 'troop', name: 'Wizard', icon: '🔥🧙', size: 28, hp: 292, dmg: 112, speed: 0.5, range: 99, attackSpeed: 1.4, cost: 5, isRanged: true, projectileType: 'fireball', isSplash: true, splashRadius: 35, canTargetAir: true, isFlying: false, displayName: 'Wizard', deployTime: 60 },
+        bomber: { type: 'troop', name: 'Bomber', icon: '💣💀', size: 24, hp: 137, dmg: 139, speed: 0.5, range: 81, attackSpeed: 1.9, cost: 2, isRanged: true, projectileType: 'bomb', isSplash: true, splashRadius: 30, canTargetAir: false, isFlying: false, displayName: 'Bomber', deployTime: 60 },
+        dart_goblin: { type: 'troop', name: 'Dart Goblin', icon: '🎯👺', size: 24, hp: 107, dmg: 50, speed: 0.9, range: 117, attackSpeed: 0.7, cost: 3, isRanged: true, projectileType: 'dart', canTargetAir: true, isFlying: false, displayName: 'Dart Goblin', deployTime: 60 },
+        balloon: { type: 'troop', name: 'Balloon', icon: '🎈', size: 35, hp: 580, dmg: 331, speed: 0.5, range: 10, attackSpeed: 3.0, cost: 5, canTargetAir: true, isFlying: true, displayName: 'Balloon', deployTime: 60, targets: 'buildings', deathBombStats: { damage: 183, aoeRadius: 60, timer: 60 } }, // 1s bomb timer
         
-        // --- NEW "PHASE 1" TROOPS ---
-        bats: { type: 'troop', name: 'Bats', icon: '🦇', size: 18, hp: 79, dmg: 79, speed: 1.4, range: 10, attackSpeed: 1.0, cost: 2, canTargetAir: true, isFlying: true, displayName: 'Bats (x5)', deployTime: 60 },
-        goblins: { type: 'troop', name: 'Goblins', icon: '🟢', size: 20, hp: 190, dmg: 119, speed: 1.8, range: 10, attackSpeed: 1.1, cost: 2, canTargetAir: false, isFlying: false, displayName: 'Goblins (x3)', deployTime: 60 },
-        minions: { type: 'troop', name: 'Minions', icon: '👿', size: 24, hp: 215, dmg: 100, speed: 1.4, range: 10, attackSpeed: 1.0, cost: 3, canTargetAir: true, isFlying: true, displayName: 'Minions (x3)', deployTime: 60 },
-        minion_horde: { type: 'troop', name: 'Minion Horde', icon: '👿👿', size: 24, hp: 215, dmg: 100, speed: 1.4, range: 10, attackSpeed: 1.0, cost: 5, canTargetAir: true, isFlying: true, displayName: 'Minion Horde (x6)', deployTime: 60, spawnUnit: 'minion_unit' },
-        royal_giant: { type: 'troop', name: 'Royal Giant', icon: '👑🏋️', size: 35, hp: 2794, dmg: 273, speed: 0.6, range: 195, attackSpeed: 1.7, cost: 6, isRanged: true, canTargetAir: false, isFlying: false, displayName: 'Royal Giant', deployTime: 60, targets: 'buildings' },
-        elite_barbarians: { type: 'troop', name: 'Elite Barbarians', icon: '💨⚔️', size: 28, hp: 1113, dmg: 332, speed: 1.8, range: 10, attackSpeed: 1.7, cost: 6, canTargetAir: false, isFlying: false, displayName: 'E-Barbs (x2)', deployTime: 60 },
+        // --- SPELLS (6) ---
+        zap: { type: 'spell', name: 'Zap', icon: '⚡', cost: 2, displayName: 'Zap', aoeRadius: 40, damage: 72, stunFrames: 30, travelTime: 0 }, // 0.5s stun
+        snowball: { type: 'spell', name: 'Snowball', icon: '⚪', cost: 2, displayName: 'Snowball', aoeRadius: 40, damage: 44, knockback: 30, travelTime: 0 },
+        fireball: { type: 'spell', name: 'Fireball', icon: '🔥', cost: 4, displayName: 'Fireball', aoeRadius: 50, damage: 258, travelTime: 50 },
+        rocket: { type: 'spell', name: 'Rocket', icon: '🚀', cost: 6, displayName: 'Rocket', aoeRadius: 40, damage: 572, travelTime: 100 },
+        earthquake: { type: 'spell', name: 'Earthquake', icon: '💥', cost: 3, displayName: 'Earthquake', aoeRadius: 70, duration: 180, troopDmgPerFrame: 0.33, buildingDmgPerFrame: 1.33, travelTime: 0 }, // 60 / 180, 240 / 180
+        freeze: { type: 'spell', name: 'Freeze', icon: '🥶', cost: 4, displayName: 'Freeze', aoeRadius: 60, damage: 0, freezeFrames: 270, travelTime: 0 }, // 4.5s freeze
+
+        // --- BUILDINGS (4) ---
+        goblin_hut: { type: 'building', name: 'Goblin Hut', icon: '🛖', size: 40, hp: 536, cost: 5, displayName: 'Goblin Hut', deployTime: 60, lifetime: 1740, spawnRate: 240, spawnCount: 1, spawnType: 'spear_goblin_unit', isAttacker: false }, // 29s life, 4s spawn
+        cannon: { type: 'building', name: 'Cannon', icon: '💣', size: 40, hp: 286, dmg: 59, attackSpeed: 0.8, range: 99, cost: 3, displayName: 'Cannon', deployTime: 60, lifetime: 1800, canTargetAir: false, isAttacker: true }, // 30s life
+        tombstone: { type: 'building', name: 'Tombstone', icon: '🪦', size: 40, hp: 192, cost: 3, displayName: 'Tombstone', deployTime: 60, lifetime: 2400, spawnRate: 174, spawnCount: 1, spawnType: 'skeleton_unit', isAttacker: false, deathSpawn: 'skeleton_unit', deathSpawnCount: 4 }, // 40s life, 2.9s spawn
+        barbarian_hut: { type: 'building', name: 'Barbarian Hut', icon: '🏠', size: 40, hp: 602, cost: 7, displayName: 'Barbarian Hut', deployTime: 60, lifetime: 3000, spawnRate: 780, spawnCount: 2, spawnType: 'barbarian_unit', isAttacker: false }, // 50s life, 13s spawn
         
-        // --- SPELLS (5) ---
-        zap: { type: 'spell', name: 'Zap', icon: '⚡', cost: 2, displayName: 'Zap', aoeRadius: 40, damage: 174, stunFrames: 30, travelTime: 0 }, // 0.5s stun
-        snowball: { type: 'spell', name: 'Snowball', icon: '⚪', cost: 2, displayName: 'Snowball', aoeRadius: 40, damage: 106, knockback: 30, travelTime: 0 },
-        fireball: { type: 'spell', name: 'Fireball', icon: '🔥', cost: 4, displayName: 'Fireball', aoeRadius: 50, damage: 627, travelTime: 50 },
-        rocket: { type: 'spell', name: 'Rocket', icon: '🚀', cost: 6, displayName: 'Rocket', aoeRadius: 40, damage: 1373, travelTime: 100 },
-        earthquake: { type: 'spell', name: 'Earthquake', icon: '💥', cost: 3, displayName: 'Earthquake', aoeRadius: 70, duration: 180, troopDmgPerFrame: 1.13, buildingDmgPerFrame: 4.53, travelTime: 0 }, // 204 / 180, 816 / 180
-
-        // --- BUILDINGS (2) ---
-        goblin_hut: { type: 'building', name: 'Goblin Hut', icon: '🛖', size: 40, hp: 1293, cost: 5, displayName: 'Goblin Hut', deployTime: 60, lifetime: 1740, spawnRate: 240, spawnType: 'spear_goblin_unit', isAttacker: false }, // 29s life, 4s spawn
-        cannon: { type: 'building', name: 'Cannon', icon: '💣', size: 40, hp: 689, dmg: 142, attackSpeed: 0.8, range: 165, cost: 3, displayName: 'Cannon', deployTime: 60, lifetime: 1800, canTargetAir: false, isAttacker: true }, // 30s life
-
         // --- HIDDEN UNITS (for spawning) ---
-        golemite: { type: 'troop_hidden', name: 'Golemite', icon: '🗿', size: 30, hp: 947, dmg: 57, speed: 0.6, range: 10, attackSpeed: 2.5, cost: 0, canTargetAir: false, isFlying: false, deployTime: 0, targets: 'buildings' },
-        spear_goblin_unit: { type: 'troop_hidden', name: 'Spear Goblins', icon: '👺', size: 20, hp: 133, dmg: 80, speed: 1.8, range: 150, attackSpeed: 1.1, cost: 0, isRanged: true, projectileColor: 'brown', canTargetAir: true, isFlying: false, deployTime: 60 },
-        minion_unit: { type: 'troop_hidden', name: 'Minions', icon: '👿', size: 24, hp: 215, dmg: 100, speed: 1.4, range: 10, attackSpeed: 1.0, cost: 0, canTargetAir: true, isFlying: true, deployTime: 60 },
+        golemite: { type: 'troop_hidden', name: 'Golemite', icon: '🗿', size: 30, hp: 393, dmg: 23, speed: 0.3, range: 10, attackSpeed: 2.5, cost: 0, canTargetAir: false, isFlying: false, deployTime: 0, targets: 'buildings' },
+        spear_goblin_unit: { type: 'troop_hidden', name: 'Spear Goblins', icon: '👺', size: 20, hp: 55, dmg: 33, speed: 0.9, range: 90, attackSpeed: 1.1, cost: 0, isRanged: true, projectileType: 'arrow', canTargetAir: true, isFlying: false, deployTime: 60 },
+        skeleton_unit: { type: 'troop_hidden', name: 'Skeleton', icon: '💀', size: 18, hp: 33, dmg: 33, speed: 0.7, range: 10, attackSpeed: 1.0, cost: 0, canTargetAir: false, isFlying: false, deployTime: 60 },
+        minion_unit: { type: 'troop_hidden', name: 'Minions', icon: '👿', size: 24, hp: 89, dmg: 41, speed: 0.7, range: 10, attackSpeed: 1.0, cost: 0, canTargetAir: true, isFlying: true, deployTime: 60 },
+        barbarian_unit: { type: 'troop_hidden', name: 'Barbarians', icon: '⚔️', size: 26, hp: 161, dmg: 50, speed: 0.5, range: 10, attackSpeed: 1.4, cost: 0, canTargetAir: false, isFlying: false, deployTime: 60 },
+        cannon_cart_building: { type: 'building_hidden', name: 'Cannon Cart (Building)', icon: '🛒', size: 30, hp: 315, dmg: 123, attackSpeed: 1.2, range: 99, cost: 0, lifetime: 99999, canTargetAir: false, isAttacker: true, deployTime: 0 },
     };
-    const STATS = MASTER_CARD_LIST;
+    const STATS = MASTER_CARD_LIST; // Alias for simplicity
+    
+    // --- NEW: Tower Level 1 Stats (Ranges Reduced) ---
+    const TOWER_STATS = {
+        princess: { hp: 1050, dmg: 46, attackSpeed: 0.8, range: 120 },
+        king: { hp: 1662, dmg: 41, attackSpeed: 1.0, range: 108 }
+    };
+
+    // --- NEW: Stat Calculator ---
+    // Calculates stats based on level. (Uses a 10% increase per level, simplified)
+    function calculateStats(baseStats, level) {
+        const newStats = { ...baseStats }; // Clone
+        const multiplier = Math.pow(1.1, level - 1);
+        
+        if (newStats.hp) newStats.hp = Math.round(newStats.hp * multiplier);
+        if (newStats.dmg) newStats.dmg = Math.round(newStats.dmg * multiplier);
+        if (newStats.towerDamage) newStats.towerDamage = Math.round(newStats.towerDamage * multiplier);
+        if (newStats.shieldHp) newStats.shieldHp = Math.round(newStats.shieldHp * multiplier);
+        if (newStats.damage) newStats.damage = Math.round(newStats.damage * multiplier);
+        
+        if (newStats.deathBombStats) {
+            newStats.deathBombStats = { ...newStats.deathBombStats };
+            newStats.deathBombStats.damage = Math.round(newStats.deathBombStats.damage * multiplier);
+        }
+        if (newStats.troopDmgPerFrame) newStats.troopDmgPerFrame *= multiplier;
+        if (newStats.buildingDmgPerFrame) newStats.buildingDmgPerFrame *= multiplier;
+
+        return newStats;
+    }
+    
+    // --- NEW: Save/Load System ---
+    function saveProgress() {
+        localStorage.setItem('clashSimProgress', JSON.stringify(playerProgress));
+    }
+    
+    function loadProgress() {
+        const savedData = localStorage.getItem('clashSimProgress');
+        if (savedData) {
+            playerProgress = JSON.parse(savedData);
+            
+            // --- IMPORTANT: Add new cards/deck to an old save file ---
+            playerProgress.savedDeck = playerProgress.savedDeck || [null, null, null, null, null, null, null, null];
+            if (playerProgress.savedDeck.length !== 8) { // Fix old save files
+                 playerProgress.savedDeck = [null, null, null, null, null, null, null, null];
+            }
+            playerProgress.cardLevels = playerProgress.cardLevels || {};
+            
+            for (const cardType in MASTER_CARD_LIST) {
+                if (!playerProgress.cardLevels[cardType]) {
+                    playerProgress.cardLevels[cardType] = 1;
+                }
+            }
+        } else {
+            // No save file, create one
+            playerProgress.coins = 100; // Start with 100 coins
+            for (const cardType in MASTER_CARD_LIST) {
+                playerProgress.cardLevels[cardType] = 1;
+            }
+            saveProgress();
+        }
+        
+        // --- NEW: Update coin counter UI ---
+        if (coinCounterDisplay) {
+            coinCounterDisplay.textContent = `Coins: ${playerProgress.coins}`;
+        }
+    }
 
     
-    // --- Deck Builder Logic ---
+    // --- Deck Builder Logic (HEAVILY REVISED) ---
     function initializeDeckBuilder() {
         cardCollectionContainer.innerHTML = ''; // Clear previous
         
+        // Create all cards in the collection
         for (const cardType in MASTER_CARD_LIST) {
             const stats = MASTER_CARD_LIST[cardType];
-            if (stats.type === 'troop_hidden') continue;
+            if (stats.type === 'troop_hidden' || stats.type === 'building_hidden') continue;
             
             const card = document.createElement('div');
             card.classList.add('deck-builder-card');
             card.dataset.card = cardType;
+            card.setAttribute('draggable', true); // --- NEW: Make draggable
             
             card.innerHTML = `
                 <div class="card-cost">${stats.cost}</div>
@@ -165,61 +275,130 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="card-name">${stats.displayName}</div>
             `;
             
-            card.addEventListener('click', () => toggleCardInDeck(card, cardType));
-            card.addEventListener('mouseover', () => showCardStats(cardType));
-            card.addEventListener('mouseout', () => clearCardStats());
+            // --- NEW: Click to show stats, Drag to build deck ---
+            card.addEventListener('click', () => showCardStats(cardType));
+            card.addEventListener('dragstart', (e) => handleDragStart(e, cardType));
             
             cardCollectionContainer.appendChild(card);
         }
         
-        updateDeckBuilderCounters(); // Set initial text
-    }
-
-    function toggleCardInDeck(cardElement, cardType) {
-        const isSelected = cardElement.classList.contains('selected');
-        
-        if (isSelected) {
-            cardElement.classList.remove('selected');
-            playerDeck = playerDeck.filter(c => c !== cardType);
-        } else {
-            if (playerDeck.length < 8) {
-                cardElement.classList.add('selected');
-                playerDeck.push(cardType);
-            }
+        // Create the 8 empty deck slots
+        savedDeckSlotsContainer.innerHTML = '';
+        for (let i = 0; i < 8; i++) {
+            const slot = document.createElement('div');
+            slot.classList.add('deck-card-slot');
+            slot.dataset.index = i;
+            
+            // --- NEW: Add drag/drop listeners ---
+            slot.addEventListener('dragover', handleDragOver);
+            slot.addEventListener('drop', (e) => handleDrop(e, i));
+            slot.addEventListener('click', () => removeCardFromDeck(i)); // Click to remove
+            
+            savedDeckSlotsContainer.appendChild(slot);
         }
+        
+        // --- NEW: Load saved deck into logic and UI ---
+        playerDeck = [...playerProgress.savedDeck]; // Sync playerDeck with the loaded progress
+        updateSavedDeckUI();
         updateDeckBuilderCounters();
     }
     
+    // --- NEW: Drag and Drop Functions ---
+    function handleDragStart(event, cardType) {
+        event.dataTransfer.setData('text/plain', cardType);
+    }
+    
+    function handleDragOver(event) {
+        event.preventDefault(); // Allow dropping
+    }
+    
+    function handleDrop(event, slotIndex) {
+        event.preventDefault();
+        const cardType = event.dataTransfer.getData('text/plain');
+        
+        if (cardType && MASTER_CARD_LIST[cardType]) {
+            // Check if card is already in the deck
+            if (playerDeck.includes(cardType)) { // <-- FIX: Check playerDeck
+                alert("Card is already in your deck!");
+                return;
+            }
+            
+            // Add card to the deck
+            playerProgress.savedDeck[slotIndex] = cardType;
+            playerDeck[slotIndex] = cardType; // <-- FIX: Add this line
+            updateSavedDeckUI();
+            updateDeckBuilderCounters();
+        }
+    }
+    
+    // --- NEW: Remove card from deck ---
+    function removeCardFromDeck(slotIndex) {
+        if (playerProgress.savedDeck[slotIndex]) {
+            playerProgress.savedDeck[slotIndex] = null;
+            playerDeck[slotIndex] = null; // <-- FIX: Add this line
+            updateSavedDeckUI();
+            updateDeckBuilderCounters();
+        }
+    }
+
+    // --- NEW: Redraws the 8-card deck UI ---
+    function updateSavedDeckUI() {
+        for (let i = 0; i < 8; i++) {
+            const slot = savedDeckSlotsContainer.children[i];
+            const cardType = playerProgress.savedDeck[i];
+            
+            if (cardType) {
+                const stats = MASTER_CARD_LIST[cardType];
+                slot.innerHTML = `
+                    <div class="card-cost">${stats.cost}</div>
+                    <div class="card-icon" style="font-size: 28px;">${stats.icon}</div>
+                    <div class="card-name" style="font-size: 9px;">${stats.displayName}</div>
+                `;
+                slot.classList.add('filled');
+            } else {
+                slot.innerHTML = '';
+                slot.classList.remove('filled');
+            }
+        }
+    }
+    
     function updateDeckBuilderCounters() {
+        // --- NEW: Count non-null cards ---
+        const cardCount = playerProgress.savedDeck.filter(card => card !== null).length;
+        
         // Update count
-        deckCounter.textContent = `Select 8 Cards (${playerDeck.length} / 8)`;
-        confirmDeckButton.disabled = (playerDeck.length !== 8);
+        deckCounter.textContent = `Your Deck (${cardCount} / 8)`;
+        confirmDeckButton.disabled = (cardCount !== 8);
 
         // Update average cost
         let totalCost = 0;
-        for (const cardType of playerDeck) {
-            totalCost += MASTER_CARD_LIST[cardType].cost;
+        for (const cardType of playerProgress.savedDeck) {
+            if (cardType) {
+                totalCost += MASTER_CARD_LIST[cardType].cost;
+            }
         }
-        const averageCost = (playerDeck.length > 0) ? (totalCost / playerDeck.length).toFixed(1) : 0.0;
+        const averageCost = (cardCount > 0) ? (totalCost / cardCount).toFixed(1) : 0.0;
         averageCostDisplay.textContent = `Average Cost: ${averageCost}`;
     }
 
+    // --- MODIFIED: Stat Display Functions ---
     function showCardStats(cardType) {
-        const stats = MASTER_CARD_LIST[cardType];
+        const currentLevel = playerProgress.cardLevels[cardType] || 1;
+        const stats = calculateStats(MASTER_CARD_LIST[cardType], currentLevel);
+        const costToUpgrade = LEVEL_UP_COSTS[currentLevel] || 0;
         
-        let html = `<h2>${stats.displayName}</h2>`;
+        let html = `<h2>${stats.displayName} (Level ${currentLevel})</h2>`;
         html += `<p><span class="stat-name">Cost:</span> ${stats.cost}</p>`;
         html += `<p><span class="stat-name">Type:</span> ${stats.type.toUpperCase()}</p>`;
         
         if (stats.type === 'troop') {
+            if (stats.shieldHp) html += `<p><span class="stat-name">Shield HP:</span> ${stats.shieldHp}</p>`;
             html += `<p><span class="stat-name">HP:</span> ${stats.hp}</p>`;
             html += `<p><span class="stat-name">Damage:</span> ${stats.dmg}</p>`;
+            if (stats.towerDamage) html += `<p><span class="stat-name">Tower Damage:</span> ${stats.towerDamage}</p>`;
             html += `<p><span class="stat-name">Speed:</span> ${stats.speed}</p>`;
             html += `<p><span class="stat-name">Attack Speed:</span> ${stats.attackSpeed}s</p>`;
-            html += `<p><span class="stat-name">Range:</span> ${stats.range}</p>`;
-            if (stats.targets === 'buildings') {
-                html += `<p><span class="stat-name">Targets:</span> Buildings</p>`;
-            }
+            if (stats.targets === 'buildings') html += `<p><span class="stat-name">Targets:</span> Buildings</p>`;
         } else if (stats.type === 'building') {
             html += `<p><span class="stat-name">HP:</span> ${stats.hp}</p>`;
             html += `<p><span class="stat-name">Lifetime:</span> ${(stats.lifetime / 60).toFixed(1)}s</p>`;
@@ -227,33 +406,82 @@ document.addEventListener("DOMContentLoaded", () => {
                  html += `<p><span class="stat-name">Damage:</span> ${stats.dmg}</p>`;
                  html += `<p><span class="stat-name">Attack Speed:</span> ${stats.attackSpeed}s</p>`;
             }
-            if (stats.spawnType) {
-                html += `<p><span class="stat-name">Spawn Speed:</span> ${(stats.spawnRate / 60).toFixed(1)}s</p>`;
-            }
+            if (stats.spawnType) html += `<p><span class="stat-name">Spawn Speed:</span> ${(stats.spawnRate / 60).toFixed(1)}s</p>`;
         } else if (stats.type === 'spell') {
             if (stats.damage) html += `<p><span class="stat-name">Damage:</span> ${stats.damage}</p>`;
             if (stats.stunFrames) html += `<p><span class="stat-name">Stun:</span> ${stats.stunFrames / 60}s</p>`;
-            if (stats.knockback) html += `<p><span class="stat-name">Knockback:</span> Yes</p>`;
+            if (stats.freezeFrames) html += `<p><span class="stat-name">Freeze:</span> ${stats.freezeFrames / 60}s</p>`;
             if (stats.duration) html += `<p><span class="stat-name">Duration:</span> ${stats.duration / 60}s</p>`;
             if (stats.troopDmgPerFrame) html += `<p><span class="stat-name">Troop DPS:</span> ${(stats.troopDmgPerFrame * 60).toFixed(0)}</p>`;
             if (stats.buildingDmgPerFrame) html += `<p><span class="stat-name">Tower DPS:</span> ${(stats.buildingDmgPerFrame * 60).toFixed(0)}</p>`;
         }
         
-        if (stats.deathSpawn) html += `<p><span class="stat-name">Death Spawn:</span> 2x Golemites</p>`;
+        if (stats.deathSpawn) html += `<p><span class="stat-name">Death Spawn:</span> ${stats.deathSpawnCount || '2'}x ${stats.deathSpawn}</p>`;
         if (stats.deathBombStats) html += `<p><span class="stat-name">Death Bomb:</span> ${stats.deathBombStats.damage} dmg</p>`;
         if (stats.slowFrames) html += `<p><span class="stat-name">Slows:</span> 35% for ${stats.slowFrames / 60}s</p>`;
 
+        // --- NEW: Level Up UI ---
+        html += `<hr><p><span class="stat-name">Your Coins:</span> ${playerProgress.coins}</p>`;
+        if (currentLevel < 14) {
+            html += `<p><span class="stat-name">Upgrade Cost:</span> ${costToUpgrade}</p>`;
+            const canAfford = playerProgress.coins >= costToUpgrade;
+            html += `<button class="modal-button" id="level-up-btn" data-card="${cardType}" ${!canAfford ? 'disabled' : ''}>
+                Level Up
+            </button>`;
+        } else {
+            html += `<p><span class="stat-name">Status:</span> MAX LEVEL</p>`;
+        }
+
         statDisplay.innerHTML = html;
+        
+        // Add listener to the new button
+        const levelUpBtn = document.getElementById('level-up-btn');
+        if (levelUpBtn) {
+            levelUpBtn.addEventListener('click', () => {
+                const cardToUpgrade = levelUpBtn.dataset.card;
+                const currentLevel = playerProgress.cardLevels[cardToUpgrade];
+                const cost = LEVEL_UP_COSTS[currentLevel];
+                
+                if (playerProgress.coins >= cost) {
+                    playerProgress.coins -= cost;
+                    playerProgress.cardLevels[cardToUpgrade]++;
+                    saveProgress();
+                    showCardStats(cardToUpgrade); // Refresh the panel
+                    coinCounterDisplay.textContent = `Coins: ${playerProgress.coins}`; // Update main counter
+                }
+            });
+        }
     }
 
     function clearCardStats() {
         statDisplay.innerHTML = `
             <h2>Card Stats</h2>
-            <p>Hover over a card to see its stats.</p>
+            <p>Click a card to see its stats or upgrade it.</p>
+            <hr>
+            <p><span class="stat-name">Your Coins:</span> ${playerProgress.coins}</p>
+            <p><span class="stat-name">King Level:</span> ${playerProgress.kingTowerLevel}</p>
+            <p><span class="stat-name">Upgrade Cost:</span> ${LEVEL_UP_COSTS[playerProgress.kingTowerLevel] || 0}</p>
+            <button class="modal-button" id="level-up-king-btn" ${playerProgress.coins < LEVEL_UP_COSTS[playerProgress.kingTowerLevel] ? 'disabled' : ''}>Level Up King</button>
         `;
+        
+        // --- NEW: Update coin counter ---
+        coinCounterDisplay.textContent = `Coins: ${playerProgress.coins}`;
+        
+        // Add listener for king tower level up
+        const levelUpKingBtn = document.getElementById('level-up-king-btn');
+        if (levelUpKingBtn) {
+            levelUpKingBtn.addEventListener('click', () => {
+                const cost = LEVEL_UP_COSTS[playerProgress.kingTowerLevel];
+                if (playerProgress.coins >= cost) {
+                    playerProgress.coins -= cost;
+                    playerProgress.kingTowerLevel++;
+                    saveProgress();
+                    clearCardStats(); // Refresh the panel
+                }
+            });
+        }
     }
     // ---------------------------------
-
 
     // --- Helper function to shuffle an array ---
     function shuffleDeck(array) {
@@ -297,7 +525,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const slot = handSlots[i];
             
         if (cardType) {
-            const stats = STATS[cardType];
+            const stats = MASTER_CARD_LIST[cardType];
             slot.innerHTML = `
                 <div class="card-cost">${stats.cost}</div>
                 <div class="card-icon">${stats.icon}</div>
@@ -317,7 +545,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const slot = handSlots[i];
             
             if (cardType) {
-                const stats = STATS[cardType];
+                const stats = MASTER_CARD_LIST[cardType]; // Cost never changes
                 if (playerElixir < stats.cost) {
                     slot.classList.add('disabled');
                 } else {
@@ -332,16 +560,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Tower Class ---
     class Tower {
-        constructor(x, y, team, name, hp, dmg, attackSpeed, range, isKingTower = false) {
+        constructor(x, y, team, name, level) {
+            const baseStats = name.includes("King") ? TOWER_STATS.king : TOWER_STATS.princess;
+            const stats = calculateStats(baseStats, level);
+            
             this.x = x; this.y = y; 
-            this.width = (isKingTower ? 50 : 40); 
-            this.height = (isKingTower ? 90 : 80); 
-            this.team = team; this.name = name; this.hp = hp; this.currentHP = this.hp;
-            this.dmg = dmg;
-            this.attackSpeed = attackSpeed;
-            this.range = range; 
-            this.isKingTower = isKingTower;
-            this.isKingTowerActive = !isKingTower; 
+            this.width = (name.includes("King") ? 50 : 40); 
+            this.height = (name.includes("King") ? 90 : 80); 
+            this.team = team; this.name = name; 
+            this.hp = stats.hp; 
+            this.currentHP = stats.hp;
+            this.dmg = stats.dmg;
+            this.attackSpeed = stats.attackSpeed;
+            this.range = stats.range; 
+            
+            this.isKingTower = name.includes("King");
+            this.isKingTowerActive = !this.isKingTower; 
             
             this.lastAttackTime = 0;
             this.target = null; this.isRanged = true; this.rangeColor = team === 'blue' ? 'blue' : 'yellow'; 
@@ -419,10 +653,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- NEW: Building Class (for Goblin Hut, Cannon) ---
+    // --- Building Class ---
     class Building {
-        constructor(type, x, y, team) {
-            Object.assign(this, STATS[type]);
+        constructor(type, x, y, team, level) {
+            const baseStats = STATS[type];
+            Object.assign(this, calculateStats(baseStats, level));
+            
             this.x = x; this.y = y; this.team = team;
             this.currentHP = this.hp;
             this.currentLifetime = this.lifetime;
@@ -433,6 +669,7 @@ document.addEventListener("DOMContentLoaded", () => {
             this.isFrozen = 0;
             this.isSlowed = 0;
             this.drawColor = team === 'blue' ? 'rgba(0, 0, 255, 0.5)' : 'rgba(255, 0, 0, 0.5)';
+            this.level = level; // Store level for spawns
         }
         
         get centerX() { return this.x + this.size / 2; }
@@ -478,7 +715,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // Spawn units (if it's a spawner)
             if (this.spawnType && gameTime - (this.lastSpawnTime || 0) >= currentSpawnRate) {
                 this.lastSpawnTime = gameTime;
-                units.push(new Unit(this.spawnType, this.centerX, this.centerY, this.team));
+                for (let i = 0; i < (this.spawnCount || 1); i++) {
+                    units.push(new Unit(this.spawnType, this.centerX + (i * 5 - 5), this.centerY, this.team, this.level));
+                }
             }
             
             // Attack (if it's an attacker)
@@ -488,9 +727,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     const distance = Math.sqrt(Math.pow(this.target.centerX - this.centerX, 2) + Math.pow(this.target.centerY - this.centerY, 2));
                     if (distance <= this.range) {
                         if (gameTime - this.lastAttackTime >= (currentAttackSpeed * 60)) {
-                            projectiles.push(new Projectile(this.centerX, this.centerY, this.target, this.dmg, 'gray'));
+                            projectiles.push(new Projectile(this.centerX, this.centerY, this.target, this.dmg, 'gray', 0, 0, 'cannonball'));
                             this.lastAttackTime = gameTime;
                         }
+                    } else {
+                        this.target = null; // Target went out of range
                     }
                 }
             }
@@ -523,26 +764,61 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- Projectile Class (For Archers, Zappies, Ice Wizard) ---
+    // --- Projectile Class (Handles Homing, Linear, and Splash) ---
     class Projectile {
-        constructor(startX, startY, target, damage, color = 'yellow', stunFrames = 0, slowFrames = 0) {
+        constructor(startX, startY, target, damage, color = 'yellow', stunFrames = 0, slowFrames = 0, projectileType = 'default', isSplash = false, splashRadius = 0) {
             this.x = startX; this.y = startY; this.target = target;
             this.damage = damage; this.speed = 10; this.size = 5; this.color = color;
             this.stunFrames = stunFrames;
             this.slowFrames = slowFrames;
+            this.projectileType = projectileType;
+            this.isSplash = isSplash;
+            this.splashRadius = splashRadius;
+            this.team = target.team === 'red' ? 'blue' : 'red'; // The projectile's team is the *opposite* of its target
+            
+            // For linear projectiles
+            this.startX = startX;
+            this.startY = startY;
+            this.targetX = target.centerX;
+            this.targetY = target.centerY;
+            const dx = this.targetX - this.startX;
+            const dy = this.targetY - this.startY;
+            const dist = Math.max(1, Math.sqrt(dx*dx + dy*dy));
+            this.dx_norm = dx / dist; // Normalized direction vector
+            this.dy_norm = dy / dist;
+            this.travelled = 0;
+            this.hitTargets = []; // For piercing
         }
 
         update() {
+            if (this.projectileType === 'piercing_arrow' || this.projectileType === 'boulder') {
+                return this.updateLinear();
+            } else {
+                return this.updateHoming();
+            }
+        }
+        
+        updateHoming() {
             if (!this.target || this.target.currentHP <= 0) { return true; }
             const targetX = this.target.centerX; const targetY = this.target.centerY;
             const dx = targetX - this.x; const dy = targetY - this.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
             if (distance < this.speed) { 
-                this.target.currentHP -= this.damage; 
-                // Activate King Tower if hit
-                if (this.target.isKingTower) { this.target.isKingTowerActive = true; }
+                if (this.isSplash) {
+                    // --- NEW: Handle ranged splash ---
+                    applySpellEffects(targetX, targetY, { aoeRadius: this.splashRadius, damage: this.damage }, this.team);
+                } else {
+                    // --- Standard single-target hit ---
+                    if (this.target.currentShieldHp > 0) {
+                        this.target.currentShieldHp -= this.damage;
+                    } else {
+                        this.target.currentHP -= this.damage; 
+                    }
+                    if (this.target.isKingTower) { this.target.isKingTowerActive = true; }
+                }
                 
+                // Apply stun/slow regardless
                 if (this.stunFrames) { this.target.isFrozen = this.stunFrames; }
                 if (this.slowFrames) { this.target.isSlowed = this.slowFrames; }
                 return true; 
@@ -551,24 +827,68 @@ document.addEventListener("DOMContentLoaded", () => {
             this.y += (dy / distance) * this.speed;
             return false;
         }
+        
+        updateLinear() {
+            // Move in a straight line
+            this.x += this.dx_norm * this.speed;
+            this.y += this.dy_norm * this.speed;
+            this.travelled += this.speed;
+            
+            const allTargets = this.team === 'blue' ? 
+                [...units.filter(u => u.team === 'red'), ...buildings.filter(b => b.team === 'red'), ...towers.filter(t => t.team === 'red')] :
+                [...units.filter(u => u.team === 'blue'), ...buildings.filter(b => b.team === 'blue'), ...towers.filter(t => t.team === 'blue')];
+
+            for(const target of allTargets) {
+                // Check for collision
+                const distance = Math.sqrt(Math.pow(target.centerX - this.x, 2) + Math.pow(target.centerY - this.y, 2));
+                const targetSize = target.size || target.width || 0;
+                
+                if (distance < (targetSize / 2) && !this.hitTargets.includes(target)) {
+                    // Hit!
+                    if (this.projectileType === 'piercing_arrow') {
+                        // Hits air and ground
+                        target.currentHP -= this.damage;
+                        if (target.isKingTower) { target.isKingTowerActive = true; }
+                        this.hitTargets.push(target); // Add to hit list
+                    } 
+                    else if (this.projectileType === 'boulder') {
+                        if (target.isFlying) continue; // Boulders only hit ground
+                        target.currentHP -= this.damage;
+                        if (target.isKingTower) { target.isKingTowerActive = true; }
+                        target.applyKnockback(50, this.x, this.y); // Apply knockback
+                        this.hitTargets.push(target); // Boulders also only hit once
+                    }
+                }
+            }
+            
+            // Destroy if it reaches max range (e.g., Magic Archer range)
+            const maxRange = this.target.range || 117; // Default to MA range
+            return this.travelled >= maxRange; 
+        }
 
         draw() {
-            ctx.fillStyle = this.color; ctx.beginPath();
-            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+            if (this.projectileType === 'boulder') {
+                ctx.fillStyle = 'gray'; ctx.beginPath();
+                ctx.arc(this.x, this.y, 10, 0, Math.PI * 2); ctx.fill();
+            } else {
+                ctx.fillStyle = this.color; ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+            }
         }
     }
 
     // --- Spell Projectile Class (For Fireball, Rocket) ---
     class SpellProjectile {
-        constructor(startX, startY, targetX, targetY, stats, team) {
+        constructor(startX, startY, targetX, targetY, stats, team, level) {
             this.x = startX;
             this.y = startY;
             this.targetX = targetX;
             this.targetY = targetY;
-            this.stats = stats;
+            this.stats = calculateStats(stats, level); // Calculate stats based on level
             this.team = team;
-            this.speed = (canvas.width / stats.travelTime);
-            this.icon = stats.icon;
+            this.speed = (canvas.width / this.stats.travelTime);
+            this.icon = this.stats.icon;
+            this.level = level;
         }
         
         update() {
@@ -577,7 +897,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const distance = Math.sqrt(dx * dx + dy * dy);
 
             if (distance < this.speed) {
-                applySpellEffects(this.targetX, this.targetY, this.stats, this.team);
+                applySpellEffects(this.targetX, this.targetY, this.stats, this.team, this.level);
                 return true; 
             }
             this.x += (dx / distance) * this.speed;
@@ -617,11 +937,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- NEW: Lingering Spell Class (for Earthquake) ---
+    // --- Lingering Spell Class (for Earthquake) ---
     class SpellEffectArea {
-        constructor(x, y, stats, team) {
-            this.x = x; this.y = y; this.stats = stats; this.team = team;
-            this.duration = stats.duration;
+        constructor(x, y, stats, team, level) {
+            this.x = x; this.y = y; 
+            this.stats = calculateStats(stats, level); // Calculate stats
+            this.team = team;
+            this.duration = this.stats.duration;
         }
         
         update() {
@@ -634,11 +956,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (target.team === this.team || target.currentHP <= 0) continue;
                 
                 const distance = Math.sqrt(Math.pow(target.centerX - this.x, 2) + Math.pow(target.centerY - this.y, 2));
-                
-                // --- THIS IS THE FIX ---
-                const targetSize = target.size || target.width || 0; // Use .size, or .width for Towers
+                const targetSize = target.size || target.width || 0; 
                 if (distance <= this.stats.aoeRadius + (targetSize / 2)) {
-                // --- END FIX ---
                     if (target.isBuilding) {
                         target.currentHP -= this.stats.buildingDmgPerFrame;
                         if (target.isKingTower) { target.isKingTowerActive = true; } // Activate king
@@ -651,7 +970,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         
         draw() {
-            // Draw a pulsing brown circle
             const opacity = 0.3 + (Math.sin(gameTime / 5) * 0.2);
             ctx.fillStyle = `rgba(139, 69, 19, ${opacity})`;
             ctx.beginPath();
@@ -660,24 +978,25 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
     
-    // --- NEW: Death Bomb Class (for Giant Skeleton) ---
+    // --- Death Bomb Class (for Giant Skeleton) ---
     class DeathBomb {
         constructor(x, y, stats, team) {
-            this.x = x; this.y = y; this.stats = stats; this.team = team;
+            this.x = x; this.y = y; 
+            this.stats = stats; // Stats are pre-calculated by unit
+            this.team = team;
             this.timer = stats.timer;
         }
         
         update() {
             this.timer--;
             if (this.timer <= 0) {
-                applySpellEffects(this.x, this.y, this.stats, this.team);
+                applySpellEffects(this.x, this.y, this.stats, this.team); // Pass pre-calculated stats
                 return true; // Destroy
             }
             return false;
         }
         
         draw() {
-            // Draw a flashing bomb
             const icon = '💣';
             ctx.font = '32px Arial';
             ctx.textAlign = 'center';
@@ -688,28 +1007,37 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     // --- Global function to apply spell AOE damage/effects ---
-    function applySpellEffects(x, y, stats, team) {
-        spellEffects.push(new SpellVisual(x, y, stats.aoeRadius));
+    function applySpellEffects(x, y, stats, team, level = 1) {
+        // Stats are pre-calculated if coming from a bomb or projectile
+        // If coming from a spell, stats are base and need calculating
+        const calculatedStats = (stats.travelTime > 0 || stats.duration > 0 || stats.timer > 0 || stats.isSplash) ? stats : calculateStats(stats, level);
+        
+        spellEffects.push(new SpellVisual(x, y, calculatedStats.aoeRadius));
         const targets = [...units, ...towers, ...buildings]; 
         
         for (const target of targets) {
             if (target.team === team || target.currentHP <= 0) continue; 
             
             const distance = Math.sqrt(Math.pow(target.centerX - x, 2) + Math.pow(target.centerY - y, 2));
+            const targetSize = target.size || target.width || 0;
             
-            // --- THIS IS THE FIX ---
-            const targetSize = target.size || target.width || 0; // Use .size, or .width for Towers
-            if (distance <= stats.aoeRadius + (targetSize / 2)) {
-            // --- END FIX ---
-                if (stats.damage) {
-                    target.currentHP -= stats.damage;
+            if (distance <= calculatedStats.aoeRadius + (targetSize / 2)) {
+                if (calculatedStats.damage) {
+                    if (target.currentShieldHp > 0) {
+                         target.currentShieldHp -= calculatedStats.damage;
+                    } else {
+                         target.currentHP -= calculatedStats.damage;
+                    }
                     if (target.isKingTower) { target.isKingTowerActive = true; } // Activate king
                 }
-                if (stats.stunFrames) {
-                    target.isFrozen = stats.stunFrames;
+                if (calculatedStats.stunFrames) {
+                    target.isFrozen = calculatedStats.stunFrames;
                 }
-                if (stats.knockback) {
-                    target.applyKnockback(stats.knockback, x, y);
+                if (calculatedStats.freezeFrames) { // --- NEW: For Freeze Spell
+                    target.isFrozen = calculatedStats.freezeFrames;
+                }
+                if (calculatedStats.knockback) {
+                    target.applyKnockback(calculatedStats.knockback, x, y);
                 }
             }
         }
@@ -718,15 +1046,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Base Unit Class ---
     class Unit {
-        constructor(type, x, y, team) { 
-            Object.assign(this, STATS[type]);
+        constructor(type, x, y, team, level) { 
+            const baseStats = STATS[type];
+            Object.assign(this, calculateStats(baseStats, level)); // Calculate stats on creation
+            
             this.x = x; this.y = y; this.team = team; 
-            this.currentHP = this.hp; this.lastAttackTime = 0;
+            this.currentHP = this.hp; 
+            this.currentShieldHp = this.shieldHp || 0; 
+            this.lastAttackTime = 0;
             this.target = null; this.isFrozen = 0; 
             this.isSlowed = 0; 
+            this.isUnderground = this.name === 'Miner'; 
             this.drawColor = team === 'blue' ? 'rgba(0, 0, 255, 0.5)' : 'rgba(255, 0, 0, 0.5)';
             this.deployTimer = this.deployTime || 0; 
-            this.bridgeTarget = null; // --- NEW: For pathfinding
+            this.bridgeTarget = null; 
+            this.level = level; // Store level for spawns/bombs
         }
 
         get centerX() { return this.x + this.size / 2; }
@@ -734,6 +1068,7 @@ document.addEventListener("DOMContentLoaded", () => {
         get isBuilding() { return false; }
 
         applyKnockback(force, blastX, blastY) {
+            if (this.isUnderground) return; 
             const dx = this.centerX - blastX;
             const dy = this.centerY - blastY;
             const dist = Math.max(1, Math.sqrt(dx*dx + dy*dy)); 
@@ -746,13 +1081,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         findTarget() {
             let potentialTargets;
-            // --- MODIFIED: Target buildings too ---
+            
             if (this.targets === 'buildings') {
                 const enemyTowers = towers.filter(t => t.team !== this.team && t.currentHP > 0);
                 const enemyBuildings = buildings.filter(b => b.team !== this.team && b.currentHP > 0);
                 potentialTargets = enemyTowers.concat(enemyBuildings);
             } else {
-                const enemies = units.filter(u => u.team !== this.team && u.currentHP > 0);
+                const enemies = units.filter(u => u.team !== this.team && u.currentHP > 0 && !u.isUnderground);
                 const enemyTowers = towers.filter(t => t.team !== this.team && t.currentHP > 0);
                 const enemyBuildings = buildings.filter(b => b.team !== this.team && b.currentHP > 0);
                 potentialTargets = enemies.concat(enemyTowers).concat(enemyBuildings);
@@ -771,11 +1106,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         update() {
+            if (this.currentShieldHp > 0) {
+                this.currentHP = this.hp; // Keep main HP full
+            } else if (this.transformOnShieldBreak) {
+                // --- TRANSFORM ---
+                buildings.push(new Building(this.transformOnShieldBreak, this.x, this.y, this.team, this.level));
+                this.currentHP = 0; // "Destroy" this unit
+                return;
+            }
+            
             if (this.currentHP <= 0) return;
             
             if (this.deployTimer > 0) {
                 this.deployTimer--;
-                return; // Do not move, attack, or find target
+                return; 
             }
             
             if (this.isFrozen > 0) { this.isFrozen = Math.max(0, this.isFrozen - 1); return; }
@@ -783,10 +1127,10 @@ document.addEventListener("DOMContentLoaded", () => {
             
             if (this.name === 'Witch' && gameTime - (this.lastSpawnTime || 0) >= this.spawnRate) {
                 this.lastSpawnTime = gameTime;
-                units.push(new Unit('skeleton', this.x, this.y - this.size, this.team));
-                units.push(new Unit('skeleton', this.x, this.y + this.size, this.team));
-                units.push(new Unit('skeleton', this.x - this.size, this.y, this.team));
-                units.push(new Unit('skeleton', this.x + this.size, this.y, this.team));
+                units.push(new Unit('skeleton_unit', this.x - 5, this.y - 5, this.team, this.level));
+                units.push(new Unit('skeleton_unit', this.x + 5, this.y - 5, this.team, this.level));
+                units.push(new Unit('skeleton_unit', this.x - 5, this.y + 5, this.team, this.level));
+                units.push(new Unit('skeleton_unit', this.x + 5, this.y + 5, this.team, this.level));
             }
 
             if (!this.target || this.target.currentHP <= 0) { this.findTarget(); }
@@ -794,7 +1138,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 const distance = Math.sqrt(Math.pow(this.target.centerX - this.centerX, 2) + Math.pow(this.target.centerY - this.centerY, 2));
                 const effectiveRange = (this.size / 2) + (this.target.width || this.target.size || 0) / 2 + this.range;
                 
-                // --- MODIFIED: Check for slow ---
                 let currentSpeed = this.speed;
                 let currentAttackSpeed = this.attackSpeed;
                 if (this.isSlowed > 0) {
@@ -803,20 +1146,63 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 if (distance <= effectiveRange) {
+                    if (this.isUnderground) {
+                        this.isUnderground = false;
+                    }
+                    
                     if (gameTime - this.lastAttackTime >= (currentAttackSpeed * 60)) { // Converted to frames
                         if (this.isRanged) {
-                            // --- MODIFIED: Pass stun/slow effects to projectile ---
                             projectiles.push(new Projectile(
                                 this.centerX, this.centerY, 
                                 this.target, this.dmg, 
-                                this.projectileColor || 'yellow', 
+                                this.projectileType === 'arrow' ? 'brown' : 
+                                this.projectileType === 'ice' ? 'cyan' :
+                                this.projectileType === 'zap' ? 'yellow' :
+                                this.projectileType === 'magic' ? 'purple' :
+                                this.projectileType === 'fireball' ? 'orange' :
+                                this.projectileType === 'cannonball' ? 'gray' :
+                                this.projectileType === 'bullet' ? 'gray' :
+                                this.projectileType === 'bomb' ? 'black' :
+                                this.projectileType === 'dart' ? 'green' :
+                                'lightgreen', 
                                 this.stunFrames || 0, 
-                                this.slowFrames || 0
+                                this.slowFrames || 0,
+                                this.projectileType || 'default',
+                                this.isSplash || false,
+                                this.splashRadius || 0
                             ));
                         } else {
-                            this.target.currentHP -= this.dmg;
-                            // --- NEW: Activate King Tower on hit ---
-                            if (this.target.isKingTower) { this.target.isKingTowerActive = true; }
+                            if (this.isSplash) {
+                                const allTargets = [...units, ...buildings, ...towers];
+                                for (const splashTarget of allTargets) {
+                                    if (splashTarget.team !== this.team && (this.canTargetAir || !splashTarget.isFlying)) {
+                                        const splashDist = Math.sqrt(Math.pow(splashTarget.centerX - this.centerX, 2) + Math.pow(splashTarget.centerY - this.centerY, 2));
+                                        if (splashDist <= (this.range + (splashTarget.size || splashTarget.width)/ 2)) {
+                                            
+                                            if (splashTarget.currentShieldHp > 0) {
+                                                splashTarget.currentShieldHp -= this.dmg;
+                                            } else {
+                                                splashTarget.currentHP -= this.dmg;
+                                            }
+                                            if (splashTarget.isKingTower) { splashTarget.isKingTowerActive = true; }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // --- Standard Melee Hit ---
+                                let damage = this.dmg;
+                                if (this.name === 'Miner' && (this.target.isKingTower || this.target.name.includes("Princess"))) {
+                                    damage = this.towerDamage;
+                                }
+                                
+                                if (this.target.currentShieldHp > 0) {
+                                    this.target.currentShieldHp -= damage;
+                                } else {
+                                    this.target.currentHP -= damage;
+                                }
+                                
+                                if (this.target.isKingTower) { this.target.isKingTowerActive = true; }
+                            }
                         }
                         this.lastAttackTime = gameTime;
                         if (this.name === 'Ice Spirit' && this.target.currentHP > 0) {
@@ -827,11 +1213,14 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     }
                 } else {
-                    // --- NEW: Pathfinding Logic ---
+                    // --- Pathfinding Logic ---
                     let moveTargetX = this.target.centerX;
                     let moveTargetY = this.target.centerY;
                     
-                    if (!this.isFlying) {
+                    if (this.isUnderground) {
+                        // Miner moves directly to target
+                    }
+                    else if (!this.isFlying) {
                         const isCrossingLeft = this.team === 'blue' && this.centerX < 275 && this.target.centerX > 325;
                         const isCrossingRight = this.team === 'red' && this.centerX > 325 && this.target.centerX < 275;
 
@@ -852,7 +1241,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     
                     const dx = moveTargetX - this.centerX;
                     const dy = moveTargetY - this.centerY;
-                    const moveDistance = Math.sqrt(dx*dx + dy*dy);
+                    const moveDistance = Math.max(1, Math.sqrt(dx*dx + dy*dy));
                     
                     this.x += (dx / moveDistance) * currentSpeed;
                     this.y += (dy / moveDistance) * currentSpeed;
@@ -864,6 +1253,13 @@ document.addEventListener("DOMContentLoaded", () => {
             if (this.deployTimer > 0 && gameTime % 10 < 5) {
                 return; // Flicker by skipping draw
             }
+            if (this.isUnderground) {
+                ctx.fillStyle = this.team === 'blue' ? 'rgba(0, 0, 150, 0.5)' : 'rgba(150, 0, 0, 0.5)';
+                ctx.beginPath();
+                ctx.arc(this.centerX, this.centerY, this.size / 2, 0, Math.PI); // Draw a semicircle
+                ctx.fill();
+                return; // Don't draw the rest
+            }
 
             ctx.fillStyle = this.drawColor;
             ctx.beginPath();
@@ -873,9 +1269,24 @@ document.addEventListener("DOMContentLoaded", () => {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(this.icon, this.centerX, this.centerY);
-            const healthRatio = this.currentHP / this.hp;
-            ctx.fillStyle = healthRatio > 0.5 ? 'green' : (healthRatio > 0.2 ? 'orange' : 'red');
-            ctx.fillRect(this.x, this.y - 5, this.size * healthRatio, 3);
+            
+            // --- NEW: Shield Bar ---
+            if (this.currentShieldHp > 0) {
+                // Draw Shield Bar
+                const shieldRatio = this.currentShieldHp / this.shieldHp;
+                ctx.fillStyle = 'white';
+                ctx.fillRect(this.x, this.y - 10, this.size * shieldRatio, 3);
+                // Draw Health Bar below
+                const healthRatio = this.currentHP / this.hp;
+                ctx.fillStyle = healthRatio > 0.5 ? 'green' : (healthRatio > 0.2 ? 'orange' : 'red');
+                ctx.fillRect(this.x, this.y - 5, this.size * healthRatio, 3);
+            } else {
+                // Draw Health Bar
+                const healthRatio = this.currentHP / this.hp;
+                ctx.fillStyle = healthRatio > 0.5 ? 'green' : (healthRatio > 0.2 ? 'orange' : 'red');
+                ctx.fillRect(this.x, this.y - 5, this.size * healthRatio, 3);
+            }
+            
             if (this.isFrozen > 0) {
                 ctx.fillStyle = 'cyan'; ctx.font = '16px Arial'; ctx.textAlign = 'center';
                 ctx.fillText('❄️', this.x + this.size/2, this.y - 10);
@@ -886,16 +1297,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- NEW: Initialize Towers with Level 11 Stats ---
-    const towers = [
-        // (x, y, team, name, hp, dmg, attackSpeed, range, isKingTower)
-        new Tower(30, 150, 'blue', 'Player King', 4008, 98, 1.0, 180, true), 
-        new Tower(80, 75, 'blue', 'Player Princess', 2534, 111, 0.8, 200, false),
-        new Tower(80, 225, 'blue', 'Player Princess', 2534, 111, 0.8, 200, false), 
-        new Tower(570, 150, 'red', 'Enemy King', 4008, 98, 1.0, 180, true),
-        new Tower(520, 75, 'red', 'Enemy Princess', 2534, 111, 0.8, 200, false), 
-        new Tower(520, 225, 'red', 'Enemy Princess', 2534, 111, 0.8, 200, false)
-    ];
+    // --- Tower array (will be created on game start) ---
+    let towers = [];
 
     // --- Core Game Functions ---
     function updateCrownDisplay() {
@@ -955,12 +1358,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (gameState === 'running') {
             matchTime--; 
             if (matchTime <= 0) {
+                // --- MODIFIED: Only set game state. Coin logic is in gameLoop ---
                 if (playerCrowns > enemyCrowns) {
-                    gameState = 'ended'; elixirMessage = "PLAYER VICTORY!";
+                    gameState = 'ended'; 
                 } else if (enemyCrowns > playerCrowns) {
-                    gameState = 'ended'; elixirMessage = "ENEMY VICTORY!";
+                    gameState = 'ended'; 
                 } else {
-                    gameState = 'overtime'; elixirMessage = "OVERTIME: 3x ELIXIR!";
+                    gameState = 'overtime'; 
+                    elixirMessage = "OVERTIME: 3x ELIXIR!";
                     elixirMessageTime = 300; 
                 }
             } else if (matchTime <= 60) {
@@ -1005,9 +1410,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const tileY = Math.floor(mouseCanvasY / TILE_SIZE);
             
             ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-
             const cardStats = STATS[activeCardType];
-            if (cardStats.type === 'troop' || cardStats.type === 'building') {
+            
+            // Miner can be placed anywhere
+            if (cardStats.deployAnywhere) {
+                // no red zone
+            } else if (cardStats.type === 'troop' || cardStats.type === 'building') {
                 const deploymentZoneMaxX = canvas.width / 2 - 10;
                 if (mouseCanvasX > deploymentZoneMaxX) {
                     ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'; // Invalid = Red
@@ -1023,8 +1431,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function gameLoop() {
         gameTime++; 
         
-        if (gameTime % 60 === 0) { updateGameState(); }
-        updateElixir();
+        if (gameTime % 60 === 0 && gameState === 'running') { updateGameState(); }
+        if (gameState === 'running') {
+            updateElixir();
+        }
+        
         checkTowersForCrowns(); 
         updateCrownDisplay();   
         updateTimerDisplay();   
@@ -1059,6 +1470,12 @@ document.addEventListener("DOMContentLoaded", () => {
             buildings[i].update();
             buildings[i].draw();
             if (buildings[i].currentHP <= 0) {
+                // --- NEW: Handle building death spawn ---
+                if (buildings[i].deathSpawn) {
+                    for (let j = 0; j < buildings[i].deathSpawnCount; j++) {
+                        units.push(new Unit(buildings[i].deathSpawn, buildings[i].x + (j*5 - 10), buildings[i].y, buildings[i].team, buildings[i].level));
+                    }
+                }
                 buildings.splice(i, 1);
             }
         }
@@ -1087,11 +1504,11 @@ document.addEventListener("DOMContentLoaded", () => {
             unit.update();
             unit.draw();
             
-            if (unit.currentHP <= 0) {
+            if (unit.currentHP <= 0 && unit.currentShieldHp <= 0) { // Check both
                 if (unit.deathSpawn) {
                     const spawnType = unit.deathSpawn;
-                    units.push(new Unit(spawnType, unit.x - 10, unit.y, unit.team));
-                    units.push(new Unit(spawnType, unit.x + 10, unit.y, unit.team));
+                    units.push(new Unit(spawnType, unit.x - 10, unit.y, unit.team, unit.level));
+                    units.push(new Unit(spawnType, unit.x + 10, unit.y, unit.team, unit.level));
                 }
                 if (unit.deathBombStats) {
                     deathBombs.push(new DeathBomb(unit.centerX, unit.centerY, unit.deathBombStats, unit.team));
@@ -1128,23 +1545,41 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         
         // 7. Win/Loss condition
+        if (gameState !== 'running') return; // Stop loop if game has ended
+
         if (playerCrowns >= 3 || (gameState === 'ended' && playerCrowns > enemyCrowns)) {
+            gameState = 'ended'; // Set state
             ctx.fillStyle = 'black';
             ctx.font = '48px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('PLAYER VICTORY!', canvas.width / 2, canvas.height / 2);
-            gameState = 'ended'; 
-            replayButton.style.display = 'block'; // --- NEW: Show replay button
+            replayButton.style.display = 'block'; 
+            
+            // --- COIN FIX ---
+            const reward = Math.round(BASE_COIN_REWARD * coinMultiplier);
+            playerProgress.coins += reward;
+            elixirMessage = `VICTORY! +${reward} COINS!`;
+            elixirMessageTime = 9999;
+            saveProgress();
+            // --- END FIX ---
             return;
         }
         
         if (enemyCrowns >= 3 || (gameState === 'ended' && enemyCrowns > playerCrowns)) {
+            gameState = 'ended'; // Set state
             ctx.fillStyle = 'black';
             ctx.font = '48px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('ENEMY VICTORY!', canvas.width / 2, canvas.height / 2);
-            gameState = 'ended'; 
-            replayButton.style.display = 'block'; // --- NEW: Show replay button
+            replayButton.style.display = 'block'; 
+            
+            // --- COIN FIX ---
+            const reward = Math.round(BASE_COIN_REWARD * coinMultiplier * 0.25); // 25% for a loss
+            playerProgress.coins += reward;
+            elixirMessage = `DEFEAT! +${reward} COINS!`;
+            elixirMessageTime = 9999;
+            saveProgress();
+            // --- END FIX ---
             return;
         }
 
@@ -1157,9 +1592,7 @@ document.addEventListener("DOMContentLoaded", () => {
             elixirMessageTime--;
         }
 
-        if (gameState !== 'ended') {
-            requestAnimationFrame(gameLoop);
-        }
+        requestAnimationFrame(gameLoop);
     }
 
     // --- Card Selection and Deployment Logic ---
@@ -1177,7 +1610,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 activeCardType = cardType;
                 activeCardSlot = index;
                 slot.classList.add('selected');
-                hoverSymbol.innerHTML = STATS[cardType].icon;
+                hoverSymbol.innerHTML = STATS[activeCardType].icon;
                 hoverSymbol.style.display = 'block';
             }
         });
@@ -1193,8 +1626,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const clickY = event.clientY - rect.top;
         
         const unitType = activeCardType;
-        const cardStats = STATS[unitType];
+        const cardStats = STATS[unitType]; // Base stats
         const cardCost = cardStats.cost;
+        const cardLevel = playerProgress.cardLevels[unitType]; // --- NEW: Get card level
 
         if (playerElixir < cardCost) { return; }
         
@@ -1206,65 +1640,64 @@ document.addEventListener("DOMContentLoaded", () => {
         const spawnX = spawnX_center - (cardStats.size || 0) / 2;
         const spawnY = spawnY_center - (cardStats.size || 0) / 2;
         
-        // --- MODIFIED: Handle all card types ---
-        
         const deploymentZoneMaxX = canvas.width / 2 - 10; 
         
         if (cardStats.type === 'troop') {
-            if (clickX > deploymentZoneMaxX) { 
+            // --- NEW: Miner "Deploy Anywhere" logic ---
+            if (!cardStats.deployAnywhere && clickX > deploymentZoneMaxX) { 
                 console.log("Can only deploy troops on your side!");
                 return; 
             }
             playerElixir -= cardCost;
             
-            // --- MODIFIED: New multi-spawn logic ---
+            // --- MODIFIED: Pass cardLevel to all spawns ---
             if (unitType === 'archer') {
-                units.push(new Unit('archer', spawnX - 5, spawnY, 'blue')); 
-                units.push(new Unit('archer', spawnX + 5, spawnY, 'blue')); 
+                units.push(new Unit('archer', spawnX - 5, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('archer', spawnX + 5, spawnY, 'blue', cardLevel)); 
             } else if (unitType === 'skeleton') {
-                units.push(new Unit('skeleton', spawnX, spawnY, 'blue')); 
-                units.push(new Unit('skeleton', spawnX - 10, spawnY - 5, 'blue')); 
-                units.push(new Unit('skeleton', spawnX + 10, spawnY + 5, 'blue')); 
+                units.push(new Unit('skeleton_unit', spawnX, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('skeleton_unit', spawnX - 10, spawnY - 5, 'blue', cardLevel)); 
+                units.push(new Unit('skeleton_unit', spawnX + 10, spawnY + 5, 'blue', cardLevel)); 
             } else if (unitType === 'barbarians') {
-                units.push(new Unit('barbarians', spawnX, spawnY, 'blue'));
-                units.push(new Unit('barbarians', spawnX - 10, spawnY - 10, 'blue'));
-                units.push(new Unit('barbarians', spawnX + 10, spawnY - 10, 'blue'));
-                units.push(new Unit('barbarians', spawnX - 10, spawnY + 10, 'blue'));
-                units.push(new Unit('barbarians', spawnX + 10, spawnY + 10, 'blue'));
+                units.push(new Unit('barbarian_unit', spawnX, spawnY, 'blue', cardLevel));
+                units.push(new Unit('barbarian_unit', spawnX - 10, spawnY - 10, 'blue', cardLevel));
+                units.push(new Unit('barbarian_unit', spawnX + 10, spawnY - 10, 'blue', cardLevel));
+                units.push(new Unit('barbarian_unit', spawnX - 10, spawnY + 10, 'blue', cardLevel));
+                units.push(new Unit('barbarian_unit', spawnX + 10, spawnY + 10, 'blue', cardLevel));
             } else if (unitType === 'spear_goblins') {
-                units.push(new Unit('spear_goblins', spawnX, spawnY, 'blue')); 
-                units.push(new Unit('spear_goblins', spawnX - 10, spawnY - 5, 'blue')); 
-                units.push(new Unit('spear_goblins', spawnX + 10, spawnY + 5, 'blue')); 
+                units.push(new Unit('spear_goblin_unit', spawnX, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('spear_goblin_unit', spawnX - 10, spawnY - 5, 'blue', cardLevel)); 
+                units.push(new Unit('spear_goblin_unit', spawnX + 10, spawnY + 5, 'blue', cardLevel)); 
             } else if (unitType === 'zappies') {
-                units.push(new Unit('zappies', spawnX, spawnY, 'blue')); 
-                units.push(new Unit('zappies', spawnX - 10, spawnY - 5, 'blue')); 
-                units.push(new Unit('zappies', spawnX + 10, spawnY + 5, 'blue')); 
+                units.push(new Unit('zappies', spawnX, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('zappies', spawnX - 10, spawnY - 5, 'blue', cardLevel)); 
+                units.push(new Unit('zappies', spawnX + 10, spawnY + 5, 'blue', cardLevel)); 
             } else if (unitType === 'bats') {
-                units.push(new Unit('bats', spawnX, spawnY, 'blue')); 
-                units.push(new Unit('bats', spawnX - 10, spawnY - 5, 'blue')); 
-                units.push(new Unit('bats', spawnX + 10, spawnY + 5, 'blue')); 
-                units.push(new Unit('bats', spawnX - 5, spawnY + 5, 'blue')); 
-                units.push(new Unit('bats', spawnX + 5, spawnY - 5, 'blue')); 
+                units.push(new Unit('bats', spawnX, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('bats', spawnX - 10, spawnY - 5, 'blue', cardLevel)); 
+                units.push(new Unit('bats', spawnX + 10, spawnY + 5, 'blue', cardLevel)); 
+                units.push(new Unit('bats', spawnX - 5, spawnY + 5, 'blue', cardLevel)); 
+                units.push(new Unit('bats', spawnX + 5, spawnY - 5, 'blue', cardLevel)); 
             } else if (unitType === 'goblins') {
-                units.push(new Unit('goblins', spawnX, spawnY, 'blue')); 
-                units.push(new Unit('goblins', spawnX - 10, spawnY - 5, 'blue')); 
-                units.push(new Unit('goblins', spawnX + 10, spawnY + 5, 'blue')); 
+                units.push(new Unit('goblins', spawnX, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('goblins', spawnX - 10, spawnY - 5, 'blue', cardLevel)); 
+                units.push(new Unit('goblins', spawnX + 10, spawnY + 5, 'blue', cardLevel)); 
             } else if (unitType === 'minions') {
-                units.push(new Unit('minions', spawnX, spawnY, 'blue')); 
-                units.push(new Unit('minions', spawnX - 10, spawnY - 5, 'blue')); 
-                units.push(new Unit('minions', spawnX + 10, spawnY + 5, 'blue')); 
+                units.push(new Unit('minion_unit', spawnX, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('minion_unit', spawnX - 10, spawnY - 5, 'blue', cardLevel)); 
+                units.push(new Unit('minion_unit', spawnX + 10, spawnY + 5, 'blue', cardLevel)); 
             } else if (unitType === 'minion_horde') {
-                units.push(new Unit('minion_unit', spawnX - 10, spawnY - 10, 'blue')); 
-                units.push(new Unit('minion_unit', spawnX + 10, spawnY - 10, 'blue')); 
-                units.push(new Unit('minion_unit', spawnX - 10, spawnY + 10, 'blue')); 
-                units.push(new Unit('minion_unit', spawnX + 10, spawnY + 10, 'blue')); 
-                units.push(new Unit('minion_unit', spawnX - 20, spawnY, 'blue')); 
-                units.push(new Unit('minion_unit', spawnX + 20, spawnY, 'blue')); 
+                units.push(new Unit('minion_unit', spawnX - 10, spawnY - 10, 'blue', cardLevel)); 
+                units.push(new Unit('minion_unit', spawnX + 10, spawnY - 10, 'blue', cardLevel)); 
+                units.push(new Unit('minion_unit', spawnX - 10, spawnY + 10, 'blue', cardLevel)); 
+                units.push(new Unit('minion_unit', spawnX + 10, spawnY + 10, 'blue', cardLevel)); 
+                units.push(new Unit('minion_unit', spawnX - 20, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('minion_unit', spawnX + 20, spawnY, 'blue', cardLevel)); 
             } else if (unitType === 'elite_barbarians') {
-                units.push(new Unit('elite_barbarians', spawnX - 5, spawnY, 'blue')); 
-                units.push(new Unit('elite_barbarians', spawnX + 5, spawnY, 'blue')); 
+                units.push(new Unit('elite_barbarians', spawnX - 5, spawnY, 'blue', cardLevel)); 
+                units.push(new Unit('elite_barbarians', spawnX + 5, spawnY, 'blue', cardLevel)); 
             } else {
-                const newUnit = new Unit(unitType, spawnX, spawnY, 'blue'); 
+                const newUnit = new Unit(unitType, spawnX, spawnY, 'blue', cardLevel); 
                 units.push(newUnit);
             }
 
@@ -1274,7 +1707,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return; 
             }
             playerElixir -= cardCost;
-            buildings.push(new Building(unitType, spawnX, spawnY, 'blue'));
+            buildings.push(new Building(unitType, spawnX, spawnY, 'blue', cardLevel));
 
         } else if (cardStats.type === 'spell') {
             playerElixir -= cardCost;
@@ -1282,14 +1715,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (cardStats.travelTime === 0) {
                 // INSTANT spell (Zap, Snowball, Earthquake)
                 if (cardStats.duration > 0) {
-                    spellAreas.push(new SpellEffectArea(clickX, clickY, cardStats, 'blue'));
+                    spellAreas.push(new SpellEffectArea(clickX, clickY, cardStats, 'blue', cardLevel));
                 } else {
-                    applySpellEffects(clickX, clickY, cardStats, 'blue');
+                    applySpellEffects(clickX, clickY, cardStats, 'blue', cardLevel);
                 }
             } else {
                 // TRAVEL-TIME spell (Fireball, Rocket)
-                const kingTower = towers.find(t => t.team === 'blue' && t.name.includes('King'));
-                spellProjectiles.push(new SpellProjectile(kingTower.centerX, kingTower.centerY, clickX, clickY, cardStats, 'blue'));
+                const kingTower = towers.find(t => t.team === 'blue' && t.isKingTower);
+                spellProjectiles.push(new SpellProjectile(kingTower.centerX, kingTower.centerY, clickX, clickY, cardStats, 'blue', cardLevel));
             }
         }
 
@@ -1334,6 +1767,7 @@ document.addEventListener("DOMContentLoaded", () => {
         for (let i = 0; i < enemySpawnCount; i++) {
             const cardType = enemyDeck[Math.floor(Math.random() * enemyDeck.length)];
             const cardStats = STATS[cardType];
+            const cardLevel = enemyLevel; // --- NEW: Use enemy level
             
             const spawnX_random = Math.random() * (canvas.width / 2 - (cardStats.size || 20) - 10) + (canvas.width / 2 + 10);
             const spawnY_random = Math.random() * (canvas.height - (cardStats.size || 20) - 10) + 5;
@@ -1348,59 +1782,69 @@ document.addEventListener("DOMContentLoaded", () => {
 
             
             if (cardStats.type === 'troop') {
-                // --- BOT MULTI-SPAWN FIX ---
+                // --- THIS IS THE FIX ---
+                // Check for all multi-spawn cards
                 if (cardType === 'archer') {
-                    units.push(new Unit('archer', spawnX - 5, spawnY, 'red')); 
-                    units.push(new Unit('archer', spawnX + 5, spawnY, 'red')); 
+                    units.push(new Unit('archer', spawnX - 5, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('archer', spawnX + 5, spawnY, 'red', cardLevel)); 
                 } else if (cardType === 'skeleton') {
-                    units.push(new Unit('skeleton', spawnX, spawnY, 'red')); 
-                    units.push(new Unit('skeleton', spawnX - 10, spawnY - 5, 'red')); 
-                    units.push(new Unit('skeleton', spawnX + 10, spawnY + 5, 'red')); 
+                    units.push(new Unit('skeleton_unit', spawnX, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('skeleton_unit', spawnX - 10, spawnY - 5, 'red', cardLevel)); 
+                    units.push(new Unit('skeleton_unit', spawnX + 10, spawnY + 5, 'red', cardLevel)); 
                 } else if (cardType === 'barbarians') {
-                    units.push(new Unit('barbarians', spawnX, spawnY, 'red')); 
-                    units.push(new Unit('barbarians', spawnX - 10, spawnY - 10, 'red')); 
-                    units.push(new Unit('barbarians', spawnX + 10, spawnY - 10, 'red')); 
-                    units.push(new Unit('barbarians', spawnX - 10, spawnY + 10, 'red')); 
-                    units.push(new Unit('barbarians', spawnX + 10, spawnY + 10, 'red')); 
+                    units.push(new Unit('barbarian_unit', spawnX, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('barbarian_unit', spawnX - 10, spawnY - 10, 'red', cardLevel)); 
+                    units.push(new Unit('barbarian_unit', spawnX + 10, spawnY - 10, 'red', cardLevel)); 
+                    units.push(new Unit('barbarian_unit', spawnX - 10, spawnY + 10, 'red', cardLevel)); 
+                    units.push(new Unit('barbarian_unit', spawnX + 10, spawnY + 10, 'red', cardLevel)); 
                 } else if (cardType === 'spear_goblins') {
-                    units.push(new Unit('spear_goblins', spawnX, spawnY, 'red')); 
-                    units.push(new Unit('spear_goblins', spawnX - 10, spawnY - 5, 'red')); 
-                    units.push(new Unit('spear_goblins', spawnX + 10, spawnY + 5, 'red')); 
+                    units.push(new Unit('spear_goblin_unit', spawnX, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('spear_goblin_unit', spawnX - 10, spawnY - 5, 'red', cardLevel)); 
+                    units.push(new Unit('spear_goblin_unit', spawnX + 10, spawnY + 5, 'red', cardLevel)); 
                 } else if (cardType === 'zappies') {
-                    units.push(new Unit('zappies', spawnX, spawnY, 'red')); 
-                    units.push(new Unit('zappies', spawnX - 10, spawnY - 5, 'red')); 
-                    units.push(new Unit('zappies', spawnX + 10, spawnY + 5, 'red')); 
+                    units.push(new Unit('zappies', spawnX, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('zappies', spawnX - 10, spawnY - 5, 'red', cardLevel)); 
+                    units.push(new Unit('zappies', spawnX + 10, spawnY + 5, 'red', cardLevel)); 
                 } else if (cardType === 'bats') {
-                    units.push(new Unit('bats', spawnX, spawnY, 'red')); 
-                    units.push(new Unit('bats', spawnX - 10, spawnY - 5, 'red')); 
-                    units.push(new Unit('bats', spawnX + 10, spawnY + 5, 'red')); 
-                    units.push(new Unit('bats', spawnX - 5, spawnY + 5, 'red')); 
-                    units.push(new Unit('bats', spawnX + 5, spawnY - 5, 'red')); 
+                    units.push(new Unit('bats', spawnX, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('bats', spawnX - 10, spawnY - 5, 'red', cardLevel)); 
+                    units.push(new Unit('bats', spawnX + 10, spawnY + 5, 'red', cardLevel)); 
+                    units.push(new Unit('bats', spawnX - 5, spawnY + 5, 'red', cardLevel)); 
+                    units.push(new Unit('bats', spawnX + 5, spawnY - 5, 'red', cardLevel)); 
                 } else if (cardType === 'goblins') {
-                    units.push(new Unit('goblins', spawnX, spawnY, 'red')); 
-                    units.push(new Unit('goblins', spawnX - 10, spawnY - 5, 'red')); 
-                    units.push(new Unit('goblins', spawnX + 10, spawnY + 5, 'red')); 
+                    units.push(new Unit('goblins', spawnX, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('goblins', spawnX - 10, spawnY - 5, 'red', cardLevel)); 
+                    units.push(new Unit('goblins', spawnX + 10, spawnY + 5, 'red', cardLevel)); 
                 } else if (cardType === 'minions') {
-                    units.push(new Unit('minions', spawnX, spawnY, 'red')); 
-                    units.push(new Unit('minions', spawnX - 10, spawnY - 5, 'red')); 
-                    units.push(new Unit('minions', spawnX + 10, spawnY + 5, 'red')); 
+                    units.push(new Unit('minion_unit', spawnX, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('minion_unit', spawnX - 10, spawnY - 5, 'red', cardLevel)); 
+                    units.push(new Unit('minion_unit', spawnX + 10, spawnY + 5, 'red', cardLevel)); 
                 } else if (cardType === 'minion_horde') {
-                    units.push(new Unit('minion_unit', spawnX - 10, spawnY - 10, 'red')); 
-                    units.push(new Unit('minion_unit', spawnX + 10, spawnY - 10, 'red')); 
-                    units.push(new Unit('minion_unit', spawnX - 10, spawnY + 10, 'red')); 
-                    units.push(new Unit('minion_unit', spawnX + 10, spawnY + 10, 'red')); 
-                    units.push(new Unit('minion_unit', spawnX - 20, spawnY, 'red')); 
-                    units.push(new Unit('minion_unit', spawnX + 20, spawnY, 'red')); 
+                    units.push(new Unit('minion_unit', spawnX - 10, spawnY - 10, 'red', cardLevel)); 
+                    units.push(new Unit('minion_unit', spawnX + 10, spawnY - 10, 'red', cardLevel)); 
+                    units.push(new Unit('minion_unit', spawnX - 10, spawnY + 10, 'red', cardLevel)); 
+                    units.push(new Unit('minion_unit', spawnX + 10, spawnY + 10, 'red', cardLevel)); 
+                    units.push(new Unit('minion_unit', spawnX - 20, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('minion_unit', spawnX + 20, spawnY, 'red', cardLevel)); 
                 } else if (cardType === 'elite_barbarians') {
-                    units.push(new Unit('elite_barbarians', spawnX - 5, spawnY, 'red')); 
-                    units.push(new Unit('elite_barbarians', spawnX + 5, spawnY, 'red')); 
+                    units.push(new Unit('elite_barbarians', spawnX - 5, spawnY, 'red', cardLevel)); 
+                    units.push(new Unit('elite_barbarians', spawnX + 5, spawnY, 'red', cardLevel)); 
+                } else if (cardType === 'miner') {
+                    const playerTargets = [...towers, ...buildings].filter(t => t.team === 'blue' && t.currentHP > 0);
+                    if (playerTargets.length > 0) {
+                        const target = playerTargets[Math.floor(Math.random() * playerTargets.length)];
+                        const minerUnit = new Unit(cardType, target.centerX, target.centerY, 'red', cardLevel);
+                        units.push(minerUnit);
+                    }
                 } else {
-                    const newUnit = new Unit(cardType, spawnX, spawnY, 'red'); 
+                    // This is for all single-spawn troops (Knight, PEKKA, Wizard, etc.)
+                    const newUnit = new Unit(cardType, spawnX, spawnY, 'red', cardLevel); 
                     units.push(newUnit);
                 }
+                // --- END OF FIX ---
                 
             } else if (cardStats.type === 'building') {
-                 buildings.push(new Building(cardType, spawnX, spawnY, 'red'));
+                 buildings.push(new Building(cardType, spawnX, spawnY, 'red', cardLevel));
                  
             } else if (cardStats.type === 'spell') {
                 const playerTargets = [...units, ...towers, ...buildings].filter(t => t.team === 'blue' && t.currentHP > 0);
@@ -1409,13 +1853,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     
                     if (cardStats.travelTime === 0) {
                         if (cardStats.duration > 0) {
-                            spellAreas.push(new SpellEffectArea(target.centerX, target.centerY, cardStats, 'red'));
+                            spellAreas.push(new SpellEffectArea(target.centerX, target.centerY, cardStats, 'red', cardLevel));
                         } else {
-                            applySpellEffects(target.centerX, target.centerY, cardStats, 'red');
+                            applySpellEffects(target.centerX, target.centerY, cardStats, 'red', cardLevel);
                         }
                     } else {
-                        const kingTower = towers.find(t => t.team === 'red' && t.name.includes('King'));
-                        spellProjectiles.push(new SpellProjectile(kingTower.centerX, kingTower.centerY, target.centerX, target.centerY, cardStats, 'red'));
+                        const kingTower = towers.find(t => t.team === 'red' && t.isKingTower);
+                        spellProjectiles.push(new SpellProjectile(kingTower.centerX, kingTower.centerY, target.centerX, target.centerY, cardStats, 'red', cardLevel));
                     }
                 }
             }
@@ -1424,8 +1868,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- START GAME LOGIC ---
     
+    // --- NEW: Load progress on start ---
+    loadProgress();
+    
     // 1. Show Intro Modal
     initializeDeckBuilder(); 
+    clearCardStats(); // Show initial coin/king level
     
     // 2. Handle "Build Deck" click
     startBuildButton.addEventListener('click', () => {
@@ -1435,27 +1883,31 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // 3. Handle "Confirm Deck" click
     confirmDeckButton.addEventListener('click', () => {
-        fullDeck = [...playerDeck]; // Set the 8 cards for the match
+        // --- NEW: Filter out any null slots before saving ---
+        fullDeck = playerProgress.savedDeck.filter(card => card !== null); 
+        
+        if (fullDeck.length !== 8) {
+            alert("Your deck must have 8 cards!");
+            return;
+        }
+        
+        saveProgress(); // --- Save the final deck
         deckBuilderModal.style.display = 'none';
         difficultyModal.style.display = 'flex';
     });
     
     // 3b. Handle "Randomize Deck" click
     randomizeDeckButton.addEventListener('click', () => {
-        const allCardTypes = shuffleDeck(Object.keys(MASTER_CARD_LIST).filter(c => MASTER_CARD_LIST[c].type !== 'troop_hidden'));
-        playerDeck = allCardTypes.slice(0, 8); // Get 8 random cards
+        const allCardTypes = shuffleDeck(Object.keys(MASTER_CARD_LIST).filter(c => MASTER_CARD_LIST[c].type !== 'troop_hidden' && MASTER_CARD_LIST[c].type !== 'building_hidden'));
+        
+        // --- NEW: Fill the savedDeck array ---
+        for (let i = 0; i < 8; i++) {
+            playerProgress.savedDeck[i] = allCardTypes[i];
+            playerDeck[i] = allCardTypes[i]; // <-- FIX: Sync playerDeck
+        }
 
-        // Update the visual selection
-        const allCardElements = document.querySelectorAll('.deck-builder-card');
-        allCardElements.forEach(cardElement => {
-            if (playerDeck.includes(cardElement.dataset.card)) {
-                cardElement.classList.add('selected');
-            } else {
-                cardElement.classList.remove('selected');
-            }
-        });
-
-        // Update the counters
+        // Update the UI
+        updateSavedDeckUI();
         updateDeckBuilderCounters();
     });
     
@@ -1469,16 +1921,32 @@ document.addEventListener("DOMContentLoaded", () => {
         button.addEventListener('click', () => {
             enemySpawnRate = parseInt(button.getAttribute('data-rate'));
             enemySpawnCount = parseInt(button.getAttribute('data-spawn-count'));
+            coinMultiplier = parseFloat(button.getAttribute('data-multiplier')); // --- NEW
+            
+            // --- NEW: Calculate enemy level based on player's deck ---
+            let totalLevel = 0;
+            for (const cardType of fullDeck) {
+                totalLevel += playerProgress.cardLevels[cardType];
+            }
+            enemyLevel = Math.max(1, Math.round(totalLevel / 8));
+            // ---
 
             difficultyModal.style.display = 'none';
             
-            // --- THIS IS THE FIX ---
             gameContainer.style.display = 'inline-block';
-            handContainer.style.display = 'inline-block'; // Set to inline-block
-            
-            // Re-apply the flex rules that the CSS is now missing
+            handContainer.style.display = 'inline-block'; 
             handContainer.style.flexDirection = 'column'; 
             handContainer.style.alignItems = 'center'; 
+            
+            // --- NEW: Create towers with correct levels ---
+            towers = [
+                new Tower(30, 150, 'blue', 'Player King', playerProgress.kingTowerLevel), 
+                new Tower(80, 75, 'blue', 'Player Princess', playerProgress.kingTowerLevel),
+                new Tower(80, 225, 'blue', 'Player Princess', playerProgress.kingTowerLevel), 
+                new Tower(570, 150, 'red', 'Enemy King', enemyLevel),
+                new Tower(520, 75, 'red', 'Enemy Princess', enemyLevel), 
+                new Tower(520, 225, 'red', 'Enemy Princess', enemyLevel)
+            ];
 
             // --- Setup the Player's deck ---
             drawPile = shuffleDeck([...fullDeck]); 
@@ -1488,7 +1956,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             
             // --- Create a random 8-card deck for the AI ---
-            const allCardTypes = shuffleDeck(Object.keys(MASTER_CARD_LIST).filter(c => MASTER_CARD_LIST[c].type !== 'troop_hidden'));
+            const allCardTypes = shuffleDeck(Object.keys(MASTER_CARD_LIST).filter(c => c.type !== 'troop_hidden' && c.type !== 'building_hidden'));
             enemyDeck = allCardTypes.slice(0, 8); 
 
             enemySpawnInterval = setInterval(spawnEnemy, enemySpawnRate);
